@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Family Tree">
+<meta name="theme-color" content="#2c1f0e">
+<link rel="manifest" href="manifest.json">
+<title>Family Tree</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --ink:#2c1f0e;--ink2:#5a3e28;--ink3:#8a6a50;
+  --parch:#f5efe0;--parch2:#ede3cc;--parch3:#e0d5ba;
+  --accent:#8b3a2a;
+  --leaf:#3a6b3a;--sky:#2a5080;--gold:#b8860b;--dead:#888;
+  --bord:rgba(44,31,14,.15);
+  --serif:'Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+  --sans:'Helvetica Neue',Helvetica,Arial,sans-serif;
+}
+html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--sans);color:var(--ink)}
+
+/* ── SHELL ── */
+#app{display:flex;flex-direction:column;height:100%}
+#topbar{
+  flex-shrink:0;height:46px;background:var(--ink);color:var(--parch);
+  display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-bottom:2px solid var(--accent);z-index:20
+}
+#topbar h1{font-family:var(--serif);font-size:15px;font-weight:normal;flex:1;letter-spacing:.03em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tb-btn{background:none;border:1px solid rgba(245,239,224,.3);color:var(--parch);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.tb-btn.on{background:rgba(245,239,224,.18)}
+
+#views{flex:1;overflow:hidden;position:relative}
+
+/* ── EGO VIEW ── */
+#ego-view{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+#ego-canvas-wrap{flex:1;position:relative;overflow:hidden;touch-action:none}
+#ego-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+/* nodes are absolutely positioned inside ego-canvas-wrap */
+
+/* ── INDEX VIEW ── */
+#index-view{position:absolute;inset:0;display:none;flex-direction:column;background:var(--parch)}
+#index-search{padding:10px 14px;border-bottom:1px solid var(--bord);flex-shrink:0}
+#index-search input{display:block;width:100%;border:1.5px solid var(--parch3);background:#fff;border-radius:8px;padding:9px 12px;font-size:15px;font-family:var(--sans);color:var(--ink);outline:none}
+#index-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.idx-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--parch3);cursor:pointer}
+.idx-item:active{background:var(--parch2)}
+.idx-av{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:14px;font-weight:bold;color:#fff}
+.idx-info{flex:1;min-width:0}
+.idx-name{font-family:var(--serif);font-size:14px;font-weight:bold;color:var(--ink)}
+.idx-sub{font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.idx-badge{font-size:10px;padding:2px 7px;border-radius:4px;flex-shrink:0}
+.badge-dead{background:#ddd;color:#666}
+.badge-alive{background:#ddeedd;color:#2a6b2a}
+
+/* ── DATA VIEW ── */
+#data-view{position:absolute;inset:0;display:none;flex-direction:column;background:var(--parch)}
+#data-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px}
+
+/* ── EGO NODES ── */
+.enode{
+  position:absolute;border-radius:12px;cursor:pointer;
+  user-select:none;-webkit-user-select:none;
+  transition:box-shadow .15s,transform .15s;
+  display:flex;flex-direction:column;justify-content:center;
+}
+.enode:active{transform:scale(.97)}
+
+/* centre / ego node */
+.enode-ego{
+  width:168px;height:90px;padding:10px 12px;
+  background:var(--ink);color:var(--parch);
+  border:none;
+  box-shadow:0 4px 20px rgba(44,31,14,.28);
+}
+.enode-ego .en-role{color:rgba(245,239,224,.6)}
+.enode-ego .en-name{color:var(--parch)}
+.enode-ego .en-dates{color:rgba(245,239,224,.7)}
+
+/* relation nodes */
+.enode-rel{
+  width:148px;min-height:74px;padding:8px 10px;
+  background:var(--parch2);
+  border:1.5px solid var(--bord);
+  box-shadow:0 2px 10px rgba(44,31,14,.1);
+}
+.enode-rel:hover{box-shadow:0 4px 16px rgba(44,31,14,.18)}
+.enode-rel.dead{background:#eae8e2;border-color:#ccc}
+.enode-rel.unknown{background:var(--parch3);border-style:dashed;opacity:.78}
+
+/* expand stub — shown when a relation node has further connections */
+.enode-rel.expandable::after{
+  content:'';position:absolute;width:8px;height:8px;border-radius:50%;
+  background:var(--ink3);opacity:.5;
+}
+/* position the expand dot based on data-dir */
+.enode-rel[data-dir="up"].expandable::after{top:-5px;left:50%;transform:translateX(-50%)}
+.enode-rel[data-dir="down"].expandable::after{bottom:-5px;left:50%;transform:translateX(-50%)}
+.enode-rel[data-dir="left"].expandable::after{left:-5px;top:50%;transform:translateY(-50%)}
+.enode-rel[data-dir="right"].expandable::after{right:-5px;top:50%;transform:translateY(-50%)}
+
+.en-role{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.en-name{font-family:var(--serif);font-size:13px;font-weight:bold;line-height:1.3;margin-bottom:1px}
+.en-dates{font-size:11px;color:var(--ink2)}
+.enode-ego .en-dates{color:rgba(245,239,224,.7)}
+.enode-rel.dead .en-name{color:var(--dead)}
+
+/* section labels on canvas */
+.elabel{
+  position:absolute;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--ink3);pointer-events:none;white-space:nowrap;
+}
+
+/* add button (+ ring on canvas) */
+.eadd{
+  position:absolute;width:30px;height:30px;border-radius:50%;
+  border:2px dashed rgba(44,31,14,.25);background:transparent;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:18px;color:var(--ink3);transition:all .15s;
+}
+.eadd:hover{background:var(--parch3);border-color:var(--ink2);color:var(--ink)}
+
+/* ── PANEL ── */
+#overlay{display:none;position:fixed;inset:0;background:rgba(44,31,14,.45);z-index:200}
+#overlay.open{display:block}
+#panel{
+  position:fixed;left:0;right:0;bottom:0;
+  background:var(--parch);border-radius:16px 16px 0 0;
+  max-height:88vh;z-index:201;
+  display:none;flex-direction:column;
+  box-shadow:0 -4px 24px rgba(44,31,14,.2)
+}
+#panel.open{display:flex}
+#ph{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--bord);flex-shrink:0}
+#pt{font-family:var(--serif);font-size:17px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pc{flex-shrink:0;background:var(--parch3);border:none;border-radius:50%;width:28px;height:28px;font-size:16px;cursor:pointer;color:var(--ink2);display:flex;align-items:center;justify-content:center}
+#pb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 30px}
+
+/* ── FORMS ── */
+.tabs{display:flex;border-bottom:1px solid var(--bord);margin-bottom:14px;overflow-x:auto}
+.tab{padding:9px 13px;font-size:13px;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;white-space:nowrap;flex-shrink:0}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.f{display:block;width:100%;margin-bottom:14px}
+.f label{display:block;font-size:11px;color:var(--ink3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+.f input,.f textarea,.f select{display:block;width:100%;border:1.5px solid var(--parch3);background:#fff;border-radius:7px;padding:9px 11px;font-size:15px;font-family:var(--sans);color:var(--ink);outline:none;-webkit-appearance:none;appearance:none}
+.f input:focus,.f textarea:focus,.f select:focus{border-color:var(--accent)}
+.f textarea{min-height:80px;resize:vertical}
+.chk{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.chk input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);flex-shrink:0}
+.chk label{font-size:14px;color:var(--ink2)}
+.sec{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);margin:18px 0 8px;border-bottom:1px solid var(--parch3);padding-bottom:4px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 16px;border-radius:8px;font-size:14px;cursor:pointer;border:none;font-family:var(--sans)}
+.btn:active{opacity:.7}
+.bp{background:var(--accent);color:#fff}.bs{background:var(--parch3);color:var(--ink2)}
+.bd{background:#c0392b;color:#fff}.bl{background:var(--leaf);color:#fff}.bk{background:var(--sky);color:#fff}
+.brow{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.fw{width:100%}
+.card{background:#fff;border:1px solid var(--parch3);border-radius:8px;padding:10px 12px;margin-bottom:8px;position:relative}
+.card-del{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--ink3);font-size:16px;cursor:pointer;padding:2px 5px}
+.card-title{font-size:14px;font-weight:bold;color:var(--ink);margin-bottom:3px}
+.card-sub{font-size:12px;color:var(--ink3)}
+.card-body{font-size:13px;color:var(--ink2);white-space:pre-wrap;margin-top:4px}
+.img-th{max-width:100%;max-height:120px;border-radius:6px;margin-top:6px;object-fit:cover}
+.prow{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--parch3);border-radius:8px;padding:9px 12px;margin-bottom:8px}
+.prow-info{flex:1;min-width:0}
+.prow-name{font-family:var(--serif);font-size:14px;font-weight:bold}
+.prow-sub{font-size:11px;color:var(--ink3)}
+.tag{display:inline-block;background:var(--parch3);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--ink2);margin:2px 3px 2px 0}
+.tag.dub{background:#ffeeba;color:#856404}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1 id="topbar-title">🌳 Family Tree</h1>
+    <button class="tb-btn on" id="btn-ego" onclick="showView('ego')">Tree</button>
+    <button class="tb-btn" id="btn-index" onclick="showView('index')">Index</button>
+    <button class="tb-btn" id="btn-data" onclick="showView('data')">Data</button>
+  </div>
+  <div id="views">
+
+    <!-- EGO / TREE VIEW -->
+    <div id="ego-view">
+      <div id="ego-canvas-wrap">
+        <svg id="ego-svg"></svg>
+      </div>
+    </div>
+
+    <!-- INDEX -->
+    <div id="index-view">
+      <div id="index-search"><input id="idx-q" type="search" placeholder="Search all people…" oninput="renderIndex(this.value)"></div>
+      <div id="index-list"></div>
+    </div>
+
+    <!-- DATA -->
+    <div id="data-view">
+      <div id="data-body">
+        <div class="sec">Export</div>
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:12px">Download all data as a JSON file for backup or transfer.</p>
+        <button class="btn bp fw" onclick="exportData()">⬇ Export Family Tree (JSON)</button>
+        <div class="sec">Import</div>
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:8px">Load a previously exported file. <strong>Replaces all current data.</strong></p>
+        <label class="btn bs fw" style="display:flex;justify-content:center;cursor:pointer">⬆ Import JSON File<input type="file" id="imp-file" accept=".json" onchange="importData(this)" style="display:none"></label>
+        <div class="sec" style="color:var(--accent)">Danger Zone</div>
+        <button class="btn bd fw" onclick="clearAll()">🗑 Clear All Data</button>
+        <div id="data-stats" style="margin-top:20px;font-size:13px;color:var(--ink3)"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="overlay" onclick="panelClose()"></div>
+<div id="panel">
+  <div id="ph"><span id="pt">—</span><button id="pc" onclick="panelClose()">✕</button></div>
+  <div id="pb"></div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════════════════════
+let db={people:{},links:[],nextId:1};
+
+function nid(){return 'p'+(db.nextId++)}
+function lid(){return 'l'+Date.now()+Math.random().toString(36).slice(2,5)}
+
+function blank(name){
+  return{id:nid(),name:name||'',role:'',unknown:false,dubious:false,deceased:false,notes:'',
+    vitals:{birthDate:'',birthPlace:'',deathDate:'',deathPlace:'',burialPlace:''},
+    residences:[],occupations:[],marriages:[],education:[],
+    anecdotes:[],images:[],documents:[],tags:[]};
+}
+
+function save(){try{localStorage.setItem('ft4_db',JSON.stringify(db))}catch(e){}}
+function load(){
+  // try latest key first, then migrate
+  const keys=['ft4_db','ft3_db','ft2_db','familytree_db'];
+  for(const k of keys){
+    try{
+      const s=localStorage.getItem(k);
+      if(s){const d=JSON.parse(s);if(d&&d.people&&Object.keys(d.people).length){db=d;break;}}
+    }catch(e){}
+  }
+  db.links=db.links||[];db.nextId=db.nextId||1;
+  Object.values(db.people).forEach(p=>{
+    if(p.deceased===undefined)p.deceased=isLikelyDead(p);
+    p.vitals=p.vitals||{birthDate:'',birthPlace:'',deathDate:'',deathPlace:'',burialPlace:''};
+    ['residences','occupations','marriages','education','anecdotes','images','documents','tags']
+      .forEach(f=>{if(!p[f])p[f]=[];});
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// RELATIONSHIP HELPERS
+// ════════════════════════════════════════════════════════════
+function parents(id){return db.links.filter(l=>l.type==='par'&&l.to===id).map(l=>l.from)}
+function children(id){return db.links.filter(l=>l.type==='par'&&l.from===id).map(l=>l.to)}
+function partners(id){return db.links.filter(l=>l.type==='par2'&&(l.from===id||l.to===id)).map(l=>l.from===id?l.to:l.from)}
+function siblings(id){
+  const pars=parents(id);if(!pars.length)return[];
+  const s=new Set();pars.forEach(p=>children(p).forEach(c=>{if(c!==id)s.add(c)}));
+  return[...s];
+}
+function linkBetween(a,b){return db.links.find(l=>(l.from===a&&l.to===b)||(l.from===b&&l.to===a))}
+
+// ════════════════════════════════════════════════════════════
+// DEAD / ALIVE
+// ════════════════════════════════════════════════════════════
+function isLikelyDead(p){
+  if(!p.vitals)return false;
+  if(p.vitals.deathDate)return true;
+  const m=(p.vitals.birthDate||'').match(/\d{4}/);
+  if(m&&new Date().getFullYear()-parseInt(m[0])>100)return true;
+  return false;
+}
+function isDead(p){return p.deceased||isLikelyDead(p)}
+
+// ════════════════════════════════════════════════════════════
+// EGO VIEW — centred graph
+// ════════════════════════════════════════════════════════════
+let egoId=null; // current centre person
+
+// Find the "me" person or first person
+function findDefault(){
+  const ids=Object.keys(db.people);
+  if(!ids.length)return null;
+  // prefer role containing "me" or "myself"
+  const me=ids.find(id=>/^me$/i.test((db.people[id].role||'').trim()));
+  return me||ids[0];
+}
+
+function setEgo(id){
+  egoId=id;
+  dismissQuickBar();
+  renderEgo();
+  const p=db.people[id];
+  document.getElementById('topbar-title').textContent=
+    p?(p.name||'Unknown')+' · Family Tree':'🌳 Family Tree';
+  // show "back to me" button if not on the default person
+  const defaultId=findDefault();
+  const homeBtn=document.getElementById('btn-home');
+  if(id!==defaultId&&defaultId){
+    if(!homeBtn){
+      const b=document.createElement('button');
+      b.className='tb-btn';b.id='btn-home';
+      b.textContent='⌂ Me';
+      b.title='Return to your own view';
+      b.onclick=()=>setEgo(defaultId);
+      document.getElementById('topbar').insertBefore(b,document.getElementById('btn-ego'));
+    }
+  } else {
+    if(homeBtn)homeBtn.remove();
+    document.getElementById('topbar-title').textContent='🌳 Family Tree';
+  }
+}
+
+// ── LAYOUT CONSTANTS ──────────────────────────────────────
+const EW=168,EH=92;    // ego node
+const RW=150,RH=78;    // relation node
+const COL_GAP=18;      // gap between nodes in a column
+const ROW_GAP=18;      // gap between nodes in a row
+const V_DIST=110;      // vertical distance ego ↔ parent/child rows
+const H_DIST=90;       // horizontal distance ego ↔ partner/sibling columns
+
+function renderEgo(){
+  const wrap=document.getElementById('ego-canvas-wrap');
+  const svg=document.getElementById('ego-svg');
+  wrap.querySelectorAll('.enode,.elabel,.eadd,.elegend').forEach(el=>el.remove());
+  svg.innerHTML='';
+
+  const ids=Object.keys(db.people);
+  if(!ids.length){
+    // empty state
+    if(!wrap.querySelector('.empty-state')){
+      const d=document.createElement('div');
+      d.className='empty-state';
+      d.style.cssText='position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none';
+      d.innerHTML=`<h2 style="font-family:var(--serif);font-size:22px;color:var(--ink2);margin-bottom:10px">Your Family Tree</h2>
+        <p style="font-size:14px;color:var(--ink3);max-width:240px;line-height:1.6">Add your first person to get started.</p>
+        <button style="pointer-events:all;margin-top:18px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:16px;font-family:var(--serif);cursor:pointer" onclick="addPersonFlow(null,null)">+ Add First Person</button>`;
+      wrap.appendChild(d);
+    }
+    return;
+  }
+  wrap.querySelector('.empty-state')?.remove();
+
+  if(!egoId||!db.people[egoId]) egoId=findDefault();
+  if(!egoId) return;
+
+  const W=wrap.clientWidth||window.innerWidth;
+  const H=wrap.clientHeight||(window.innerHeight-46);
+
+  // ── Gather relations ──────────────────────────────────────
+  const ego=db.people[egoId];
+  const myParents  = parents(egoId);
+  const myChildren = children(egoId);
+  const myPartners = partners(egoId);
+  const mySiblings = siblings(egoId);
+
+  // ── Decide ego node centre ────────────────────────────────
+  // Bias slightly left+up if we have partners (right) and children (below)
+  // Keep it roughly centred
+  const ecx = W/2;   // ego centre X
+  const ecy = H/2;   // ego centre Y
+  const ex  = ecx - EW/2;
+  const ey  = ecy - EH/2;
+
+  const edges=[];
+
+  // ── PARENTS — row above ───────────────────────────────────
+  const parentRowY = ey - V_DIST - RH;
+  if(myParents.length){
+    const pos = spreadH(myParents.length, RW, ROW_GAP, ecx);
+    myParents.forEach((pid,i)=>{
+      const nx=pos[i], ny=parentRowY;
+      makeNode(wrap,pid,nx,ny,'rel','up');
+      const lk=linkBetween(pid,egoId);
+      edges.push({x1:ecx,y1:ey,x2:nx+RW/2,y2:ny+RH,rel:'parent',dubious:lk?.dubious});
+    });
+    makeLabel(wrap,ecx, parentRowY-20, 'Parents');
+    // add-parent button at end of row
+    const lastX = spreadH(myParents.length,RW,ROW_GAP,ecx)[myParents.length-1]+RW+12;
+    makeAdd(wrap, lastX, parentRowY+RH/2-15, ()=>addPersonFlow(egoId,'parent'));
+  } else {
+    makeLabel(wrap, ecx, parentRowY-20, 'Parents');
+    makeAdd(wrap, ecx-15, parentRowY+RH/2-15, ()=>addPersonFlow(egoId,'parent'));
+  }
+
+  // ── PARTNERS — column right ───────────────────────────────
+  const partnerColX = ex + EW + H_DIST;
+  if(myPartners.length){
+    const pos = spreadV(myPartners.length, RH, COL_GAP, ecy);
+    myPartners.forEach((pid,i)=>{
+      const nx=partnerColX, ny=pos[i];
+      makeNode(wrap,pid,nx,ny,'rel','right');
+      const lk=linkBetween(pid,egoId);
+      edges.push({x1:ex+EW,y1:ecy,x2:nx,y2:ny+RH/2,rel:'partner',dubious:lk?.dubious});
+    });
+    makeLabel(wrap, partnerColX+RW/2, pos[0]-20, 'Partners / Spouses');
+    const lastY = spreadV(myPartners.length,RH,COL_GAP,ecy)[myPartners.length-1]+RH+10;
+    makeAdd(wrap, partnerColX+RW/2-15, lastY, ()=>addPersonFlow(egoId,'partner'));
+  } else {
+    makeLabel(wrap, partnerColX+RW/2, ecy-RH/2-20, 'Partners');
+    makeAdd(wrap, partnerColX+RW/2-15, ecy-15, ()=>addPersonFlow(egoId,'partner'));
+  }
+
+  // ── CHILDREN — row below ──────────────────────────────────
+  const childRowY = ey + EH + V_DIST;
+  if(myChildren.length){
+    const pos = spreadH(myChildren.length, RW, ROW_GAP, ecx);
+    myChildren.forEach((cid,i)=>{
+      const nx=pos[i], ny=childRowY;
+      makeNode(wrap,cid,nx,ny,'rel','down');
+      const lk=linkBetween(egoId,cid);
+      edges.push({x1:ecx,y1:ey+EH,x2:nx+RW/2,y2:ny,rel:'child',dubious:lk?.dubious});
+    });
+    makeLabel(wrap, ecx, childRowY+RH+8, 'Children');
+    const lastX = spreadH(myChildren.length,RW,ROW_GAP,ecx)[myChildren.length-1]+RW+12;
+    makeAdd(wrap, lastX, childRowY+RH/2-15, ()=>addPersonFlow(egoId,'child'));
+  } else {
+    makeLabel(wrap, ecx, childRowY+RH+8, 'Children');
+    makeAdd(wrap, ecx-15, childRowY+RH/2-15, ()=>addPersonFlow(egoId,'child'));
+  }
+
+  // ── SIBLINGS — column left ────────────────────────────────
+  const sibColX = ex - H_DIST - RW;
+  if(mySiblings.length){
+    const pos = spreadV(mySiblings.length, RH, COL_GAP, ecy);
+    mySiblings.forEach((sid,i)=>{
+      const nx=sibColX, ny=pos[i];
+      makeNode(wrap,sid,nx,ny,'rel','left');
+      // sibling line goes to shared-parent midpoint visually — just draw lateral
+      edges.push({x1:ex,y1:ecy,x2:nx+RW,y2:ny+RH/2,rel:'sibling',dubious:false});
+    });
+    makeLabel(wrap, sibColX+RW/2, pos[0]-20, 'Siblings');
+    const lastY = spreadV(mySiblings.length,RH,COL_GAP,ecy)[mySiblings.length-1]+RH+10;
+    makeAdd(wrap, sibColX+RW/2-15, lastY, ()=>addPersonFlow(egoId,'sibling'));
+  } else {
+    makeLabel(wrap, sibColX+RW/2, ecy-RH/2-20, 'Siblings');
+    makeAdd(wrap, sibColX+RW/2-15, ecy-15, ()=>addPersonFlow(egoId,'sibling'));
+  }
+
+  // ── Ego node (drawn last so it's on top) ──────────────────
+  makeNode(wrap,egoId,ex,ey,'ego');
+
+  // ── Draw edges ────────────────────────────────────────────
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+  let svgH='';
+  edges.forEach(e=>{
+    // Colour and style encode ONLY the relationship type.
+    // Dubious adds a secondary dash pattern on top.
+    let stroke,sw,dash;
+    if(e.rel==='parent'||e.rel==='child'){
+      stroke='#5a3e28'; sw=2; dash='none';
+    } else if(e.rel==='partner'){
+      stroke='#8b3a2a'; sw=1.5; dash='8,5';
+    } else { // sibling
+      stroke='#8a6a50'; sw=1.5; dash='3,5';
+    }
+    if(e.dubious){
+      // overlay a gold dash on uncertain links
+      stroke='#b8860b'; dash='5,4';
+    }
+    const mx=(e.x1+e.x2)/2, my=(e.y1+e.y2)/2;
+    svgH+=`<path d="M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}" `+
+      `stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-dasharray="${dash}" opacity=".85"/>`;
+  });
+  svg.innerHTML=svgH;
+
+  // ── Legend ────────────────────────────────────────────────
+  const leg=document.createElement('div');
+  leg.className='elegend';
+  leg.style.cssText='position:absolute;bottom:12px;right:14px;background:rgba(245,239,224,.92);border:1px solid rgba(44,31,14,.12);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--ink2);pointer-events:none;line-height:1.8';
+  leg.innerHTML=
+    `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#5a3e28" stroke-width="2"/></svg>Parent / Child</div>`+
+    `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#8b3a2a" stroke-width="1.5" stroke-dasharray="8,5"/></svg>Partner / Spouse</div>`+
+    `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#8a6a50" stroke-width="1.5" stroke-dasharray="3,5"/></svg>Sibling</div>`+
+    `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#b8860b" stroke-width="1.5" stroke-dasharray="5,4"/></svg>Uncertain</div>`+
+    `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(44,31,14,.1);font-size:10px;color:var(--ink3)">Tap a person to act · tap again to re-centre</div>`;
+  wrap.appendChild(leg);
+}
+
+// ── Spread N items horizontally, centred on anchorX ────────
+// Returns array of left-edge X values
+function spreadH(n, w, gap, anchorX){
+  const total = n*w + (n-1)*gap;
+  let x = anchorX - total/2;
+  const out=[];
+  for(let i=0;i<n;i++){ out.push(x); x+=w+gap; }
+  return out;
+}
+// Returns array of top-edge Y values
+function spreadV(n, h, gap, anchorY){
+  const total = n*h + (n-1)*gap;
+  let y = anchorY - total/2;
+  const out=[];
+  for(let i=0;i<n;i++){ out.push(y); y+=h+gap; }
+  return out;
+}
+
+
+// ── Create a node element ──────────────────────────────────
+function makeNode(wrap,id,x,y,kind,dir){
+  const p=db.people[id];if(!p)return;
+  const dead=isDead(p);
+  const el=document.createElement('div');
+  el.className='enode enode-'+(kind==='ego'?'ego':'rel');
+  if(kind!=='ego'){
+    if(dead)el.classList.add('dead');
+    if(p.unknown)el.classList.add('unknown');
+  }
+  el.id='enode-'+id;
+  el.style.cssText=`left:${x}px;top:${y}px;width:${kind==='ego'?EW:RW}px;min-height:${kind==='ego'?EH:RH}px`;
+  if(dir)el.setAttribute('data-dir',dir);
+
+  // expandable dot — if this relation has their own further relations
+  if(kind!=='ego'){
+    const hasMore=parents(id).length||children(id).length||partners(id).length;
+    if(hasMore)el.classList.add('expandable');
+  }
+
+  el.innerHTML=
+    `<div class="en-role">${esc(p.role||'—')}</div>`+
+    `<div class="en-name">${esc(p.name||'Unknown')}${dead?' †':''}</div>`+
+    `<div class="en-dates">${fmtDates(p)}</div>`;
+
+  el.addEventListener('click',()=>{
+    if(kind==='ego'){
+      openDetail(id);
+    } else {
+      // first tap: select/highlight. Second tap (or long-press): centre on this person
+      if(el.classList.contains('sel')){
+        setEgo(id); // navigate to this person
+      } else {
+        wrap.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
+        el.classList.add('sel');
+        // show quick-action bar
+        showQuickBar(id,el);
+      }
+    }
+  });
+
+  wrap.appendChild(el);
+}
+
+// ── Quick action bar when a relation node is tapped ────────
+let quickBarEl=null;
+function showQuickBar(id,nodeEl){
+  if(quickBarEl)quickBarEl.remove();
+  const p=db.people[id];
+  const bar=document.createElement('div');
+  bar.id='quick-bar';
+  bar.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--ink);color:var(--parch);display:flex;align-items:stretch;z-index:150;border-top:2px solid var(--accent)';
+  bar.innerHTML=`
+    <button onclick="setEgo('${id}')" style="flex:1;padding:12px 6px;background:none;border:none;color:var(--parch);font-family:var(--serif);font-size:13px;cursor:pointer;border-right:1px solid rgba(255,255,255,.15)">
+      👁 View tree<br><span style="font-size:10px;opacity:.7">from their perspective</span>
+    </button>
+    <button onclick="openDetail('${id}')" style="flex:1;padding:12px 6px;background:none;border:none;color:var(--parch);font-family:var(--serif);font-size:13px;cursor:pointer;border-right:1px solid rgba(255,255,255,.15)">
+      ✏️ Edit<br><span style="font-size:10px;opacity:.7">details & records</span>
+    </button>
+    <button onclick="dismissQuickBar()" style="width:44px;background:none;border:none;color:rgba(255,255,255,.6);font-size:20px;cursor:pointer">✕</button>`;
+  document.body.appendChild(bar);
+  quickBarEl=bar;
+}
+function dismissQuickBar(){
+  if(quickBarEl)quickBarEl.remove();
+  quickBarEl=null;
+  document.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
+}
+
+// ── Label ──────────────────────────────────────────────────
+function makeLabel(wrap,cx,y,text){
+  const el=document.createElement('div');
+  el.className='elabel';
+  el.textContent=text;
+  el.style.cssText=`left:${cx}px;top:${y}px;transform:translateX(-50%)`;
+  wrap.appendChild(el);
+}
+
+// ── Add button ─────────────────────────────────────────────
+function makeAdd(wrap,x,y,cb){
+  const el=document.createElement('button');
+  el.className='eadd';
+  el.textContent='+';
+  el.style.cssText=`left:${x}px;top:${y}px`;
+  el.addEventListener('click',cb);
+  wrap.appendChild(el);
+}
+
+// ════════════════════════════════════════════════════════════
+// VIEW SWITCHER
+// ════════════════════════════════════════════════════════════
+let curView='ego';
+function showView(v){
+  curView=v;
+  document.getElementById('ego-view').style.display=v==='ego'?'flex':'none';
+  document.getElementById('index-view').style.display=v==='index'?'flex':'none';
+  document.getElementById('data-view').style.display=v==='data'?'flex':'none';
+  ['ego','index','data'].forEach(n=>document.getElementById('btn-'+n).classList.toggle('on',n===v));
+  if(v==='index')renderIndex('');
+  if(v==='data')renderStats();
+  if(v==='ego')renderEgo();
+  dismissQuickBar();
+}
+
+// ════════════════════════════════════════════════════════════
+// PANEL
+// ════════════════════════════════════════════════════════════
+let curId=null,curTab='vitals';
+function panelOpen(title,html){
+  document.getElementById('pt').textContent=title;
+  document.getElementById('pb').innerHTML=html;
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('panel').classList.add('open');
+}
+function panelClose(){
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('panel').classList.remove('open');
+  curId=null;
+  dismissQuickBar();
+}
+function panelUpdate(){
+  const p=db.people[curId];if(!p)return;
+  document.getElementById('pt').textContent=p.name||'Unknown Person';
+  document.getElementById('pb').innerHTML=buildDetailBody();
+}
+
+// ════════════════════════════════════════════════════════════
+// ADD PERSON FLOW
+// ════════════════════════════════════════════════════════════
+function addPersonFlow(relId,relType){
+  curId=null;
+  const sibNote=(relType==='sibling'&&relId&&!parents(relId).length)
+    ?'<p style="font-size:12px;color:var(--ink3);margin-bottom:10px">No parents on record yet — a shared unknown parent will be added automatically.</p>':'';
+  const title=relType?('Add '+relType.charAt(0).toUpperCase()+relType.slice(1)):'Add Person';
+  panelOpen(title,`
+    ${sibNote}
+    <div class="f"><label>Full Name</label><input id="ap-name" type="text" placeholder="Leave blank for 'Unknown'"></div>
+    <div class="f"><label>Role / Label <span style="text-transform:none;font-weight:normal">(e.g. maternal grandfather)</span></label><input id="ap-role" type="text" placeholder="Optional"></div>
+    <div class="chk"><input type="checkbox" id="ap-unk"><label for="ap-unk">Unknown / placeholder person</label></div>
+    <div class="chk"><input type="checkbox" id="ap-dub"><label for="ap-dub">Relationship uncertain / disputed</label></div>
+    <div class="chk"><input type="checkbox" id="ap-dead"><label for="ap-dead">Deceased</label></div>
+    ${relType==='partner'?'<div class="f"><label>Relationship type</label><select id="ap-pt"><option value="">Partner / Spouse</option><option value="common-law">Common-law</option><option value="affair">Affair / extramarital</option><option value="unofficial">Unofficial / unclear</option></select></div>':''}
+    <div class="brow">
+      <button class="btn bp" onclick="doAddPerson('${relId||''}','${relType||''}')">Add Person</button>
+      <button class="btn bs" onclick="panelClose()">Cancel</button>
+    </div>`);
+  setTimeout(()=>{const el=document.getElementById('ap-name');if(el)el.focus();},80);
+}
+
+function doAddPerson(relId,relType){
+  const name=document.getElementById('ap-name').value.trim();
+  const role=document.getElementById('ap-role').value.trim();
+  const unk=document.getElementById('ap-unk').checked;
+  const dub=document.getElementById('ap-dub').checked;
+  const dead=document.getElementById('ap-dead').checked;
+  const ptEl=document.getElementById('ap-pt');
+
+  const p=blank(name);p.role=role;p.unknown=unk;p.dubious=dub;p.deceased=dead;
+  db.people[p.id]=p;
+
+  if(relId){
+    if(relType==='parent')  db.links.push({id:lid(),type:'par',from:p.id,to:relId,dubious:dub});
+    else if(relType==='child')   db.links.push({id:lid(),type:'par',from:relId,to:p.id,dubious:dub});
+    else if(relType==='partner') db.links.push({id:lid(),type:'par2',from:relId,to:p.id,dubious:dub,notes:ptEl?ptEl.value:''});
+    else if(relType==='sibling'){
+      const pars=parents(relId);
+      if(pars.length){
+        pars.forEach(pid=>db.links.push({id:lid(),type:'par',from:pid,to:p.id,dubious:dub}));
+      }else{
+        const sp=blank('');sp.unknown=true;sp.role='unknown parent';
+        db.people[sp.id]=sp;
+        db.links.push({id:lid(),type:'par',from:sp.id,to:relId,dubious:true});
+        db.links.push({id:lid(),type:'par',from:sp.id,to:p.id,dubious:true});
+      }
+    }
+  }
+  // If this is the first person, make them the ego
+  if(Object.keys(db.people).length===1)egoId=p.id;
+
+  save();panelClose();renderEgo();
+  // open their detail immediately
+  curId=p.id;curTab='vitals';
+  panelOpen(p.name||'Unknown Person',buildDetailBody());
+}
+
+// ════════════════════════════════════════════════════════════
+// DETAIL PANEL
+// ════════════════════════════════════════════════════════════
+const TABS=[['vitals','Vitals'],['life','Life Events'],['rels','Relationships'],['notes','Notes'],['docs','Documents']];
+
+function openDetail(id){curId=id;curTab='vitals';const p=db.people[id];if(!p)return;panelOpen(p.name||'Unknown Person',buildDetailBody());}
+function setTab(t){curTab=t;panelUpdate();}
+function buildDetailBody(){
+  const p=db.people[curId];if(!p)return'';
+  const tabs=TABS.map(([k,v])=>`<div class="tab${curTab===k?' on':''}" onclick="setTab('${k}')">${v}</div>`).join('');
+  return`<div class="tabs">${tabs}</div>`+buildTab();
+}
+function buildTab(){
+  const p=db.people[curId];if(!p)return'';
+  if(curTab==='vitals')return bVitals(p);
+  if(curTab==='life')  return bLife(p);
+  if(curTab==='rels')  return bRels(p);
+  if(curTab==='notes') return bNotes(p);
+  if(curTab==='docs')  return bDocs(p);
+  return'';
+}
+
+function bVitals(p){
+  const dead=isDead(p);
+  return`
+    <div class="f"><label>Full Name</label><input type="text" value="${esc(p.name)}" oninput="up('name',this.value)"></div>
+    <div class="f"><label>Role / Label</label><input type="text" value="${esc(p.role)}" oninput="up('role',this.value)" placeholder="e.g. maternal grandfather"></div>
+    <div class="chk"><input type="checkbox" id="v-unk" ${p.unknown?'checked':''} onchange="up('unknown',this.checked)"><label for="v-unk">Unknown / placeholder person</label></div>
+    <div class="chk"><input type="checkbox" id="v-dub" ${p.dubious?'checked':''} onchange="up('dubious',this.checked)"><label for="v-dub">Relationship uncertain / disputed</label></div>
+    <div class="chk"><input type="checkbox" id="v-dead" ${dead?'checked':''} onchange="setDead(this.checked)">
+      <label for="v-dead">Deceased${isLikelyDead(p)&&!p.deceased?' <span style="font-size:11px;color:var(--ink3)">(auto-detected)</span>':''}</label></div>
+    <div class="sec">Birth</div>
+    <div class="f"><label>Date of Birth</label><input type="text" value="${esc(p.vitals.birthDate)}" placeholder="e.g. 12 Mar 1892 or c.1892" oninput="upV('birthDate',this.value)"></div>
+    <div class="f"><label>Place of Birth</label><input type="text" value="${esc(p.vitals.birthPlace)}" oninput="upV('birthPlace',this.value)"></div>
+    <div class="sec">Death</div>
+    <div class="f"><label>Date of Death</label><input type="text" value="${esc(p.vitals.deathDate)}" placeholder="Setting this marks as deceased" oninput="upV('deathDate',this.value)"></div>
+    <div class="f"><label>Place of Death</label><input type="text" value="${esc(p.vitals.deathPlace)}" oninput="upV('deathPlace',this.value)"></div>
+    <div class="f"><label>Burial Place</label><input type="text" value="${esc(p.vitals.burialPlace)}" oninput="upV('burialPlace',this.value)"></div>
+    <div class="sec">General Notes</div>
+    <div class="f"><textarea oninput="up('notes',this.value)">${esc(p.notes)}</textarea></div>
+    <div class="sec">Tags</div>
+    <div id="taglist">${(p.tags||[]).map((t,i)=>`<span class="tag" onclick="rmTag(${i})" style="cursor:pointer">${esc(t)} ✕</span>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <input type="text" id="newtag" placeholder="Add tag…" style="flex:1;border:1.5px solid var(--parch3);border-radius:7px;padding:8px 10px;font-size:14px">
+      <button class="btn bs" onclick="addTag()">Add</button>
+    </div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--parch3);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bk" onclick="panelClose();setEgo('${p.id}')">👁 View from here</button>
+      <button class="btn bd" onclick="delPerson()">Delete</button>
+    </div>`;
+}
+
+function bLife(p){
+  return`
+    <div class="sec">Residences</div>
+    ${p.residences.map((r,i)=>`<div class="card"><button class="card-del" onclick="rmMulti('residences',${i})">✕</button>
+      <div class="card-title">${esc(r.place||'?')}</div>
+      <div class="card-sub">${esc(r.from||'')}${r.to?' – '+r.to:''}</div>
+      ${r.notes?`<div class="card-body">${esc(r.notes)}</div>`:''}</div>`).join('')}
+    <button class="btn bs fw" onclick="addMulti('residences')">+ Add Residence</button>
+    <div class="sec">Occupations</div>
+    ${p.occupations.map((o,i)=>`<div class="card"><button class="card-del" onclick="rmMulti('occupations',${i})">✕</button>
+      <div class="card-title">${esc(o.job||'?')}${o.employer?' — '+esc(o.employer):''}</div>
+      <div class="card-sub">${esc(o.from||'')}${o.to?' – '+o.to:''} ${o.place?'· '+esc(o.place):''}</div></div>`).join('')}
+    <button class="btn bs fw" onclick="addMulti('occupations')">+ Add Occupation</button>
+    <div class="sec">Marriages / Unions</div>
+    ${p.marriages.map((m,i)=>`<div class="card"><button class="card-del" onclick="rmMulti('marriages',${i})">✕</button>
+      <div class="card-title">${esc(m.partnerName||'?')}${m.status?' ('+esc(m.status)+')':''}</div>
+      <div class="card-sub">${esc(m.date||'')}${m.place?' · '+esc(m.place):''}</div>
+      ${m.notes?`<div class="card-body">${esc(m.notes)}</div>`:''}</div>`).join('')}
+    <button class="btn bs fw" onclick="addMulti('marriages')">+ Add Marriage / Union</button>
+    <div class="sec">Education</div>
+    ${p.education.map((e,i)=>`<div class="card"><button class="card-del" onclick="rmMulti('education',${i})">✕</button>
+      <div class="card-title">${esc(e.school||'?')}${e.qualification?' — '+esc(e.qualification):''}</div>
+      <div class="card-sub">${esc(e.from||'')}${e.to?' – '+e.to:''}</div></div>`).join('')}
+    <button class="btn bs fw" onclick="addMulti('education')">+ Add Education</button>`;
+}
+
+function bRels(p){
+  const id=curId;
+  const pars=parents(id),chldr=children(id),prtns=partners(id),sibs=siblings(id);
+  return`
+    <div class="sec">Parents</div>
+    ${pars.map(pid=>prow(pid,id,'par')).join('')||noRec()}
+    <div class="brow" style="margin-top:6px">
+      <button class="btn bk" onclick="panelClose();addPersonFlow('${id}','parent')">+ New parent</button>
+      <button class="btn bs" onclick="linkEx('${id}','parent')">+ Link existing</button>
+    </div>
+    <div class="sec">Partners / Spouses</div>
+    ${prtns.map(pid=>prow(pid,id,'par2')).join('')||noRec()}
+    <div class="brow" style="margin-top:6px">
+      <button class="btn bp" onclick="panelClose();addPersonFlow('${id}','partner')">+ New partner</button>
+      <button class="btn bs" onclick="linkEx('${id}','partner')">+ Link existing</button>
+    </div>
+    <div class="sec">Children</div>
+    ${chldr.map(pid=>prow(pid,id,'par')).join('')||noRec()}
+    <div class="brow" style="margin-top:6px">
+      <button class="btn bl" onclick="panelClose();addPersonFlow('${id}','child')">+ New child</button>
+      <button class="btn bs" onclick="linkEx('${id}','child')">+ Link existing</button>
+    </div>
+    <div class="sec">Siblings <span style="font-size:10px;text-transform:none;letter-spacing:0;font-weight:normal">(via shared parents)</span></div>
+    ${sibs.map(pid=>prow(pid,id,'sib')).join('')||noRec()}
+    <div class="brow" style="margin-top:6px">
+      <button class="btn bs" style="background:var(--ink2);color:#fff" onclick="panelClose();addPersonFlow('${id}','sibling')">+ New sibling</button>
+      <button class="btn bs" onclick="linkEx('${id}','sibling')">+ Link existing</button>
+    </div>`;
+}
+function noRec(){return'<p style="font-size:13px;color:var(--ink3);margin-bottom:8px">None recorded</p>';}
+function prow(pid,relId,ltype){
+  const p=db.people[pid];if(!p)return'';
+  const link=ltype!=='sib'?linkBetween(pid,relId):null;
+  return`<div class="prow">
+    <div class="prow-info">
+      <div class="prow-name">${esc(p.name||'Unknown')}${isDead(p)?' †':''}</div>
+      <div class="prow-sub">${esc(p.role||'')}${link&&link.dubious?' · <span class="tag dub">uncertain</span>':''}</div>
+    </div>
+    <button class="btn bs" style="font-size:12px;padding:5px 9px" onclick="panelClose();setEgo('${pid}')">👁</button>
+    <button class="btn bs" style="font-size:12px;padding:5px 9px" onclick="openDetail('${pid}')">✏️</button>
+    ${link?`<button class="btn bs" style="font-size:12px;padding:5px 8px;color:var(--gold)" title="Toggle uncertain" onclick="toggleDub('${link.id}')">⚑</button>`:''}
+    ${link&&ltype!=='sib'?`<button class="btn bs" style="font-size:12px;padding:5px 8px" onclick="rmLink('${link.id}')">✕</button>`:''}
+  </div>`;
+}
+function bNotes(p){
+  return`
+    <div class="sec">Anecdotes &amp; Stories</div>
+    ${p.anecdotes.map((a,i)=>`<div class="card"><button class="card-del" onclick="rmAttach('anecdotes',${i})">✕</button>
+      <div class="card-title">${esc(a.title)}</div>
+      ${a.date?`<div class="card-sub">${esc(a.date)}</div>`:''}
+      <div class="card-body">${esc(a.text)}</div></div>`).join('')}
+    <button class="btn bs fw" onclick="addAttach('anecdote')">+ Add Anecdote / Story</button>`;
+}
+function bDocs(p){
+  return`
+    <div class="sec">Images &amp; Photos</div>
+    ${p.images.map((img,i)=>`<div class="card"><button class="card-del" onclick="rmAttach('images',${i})">✕</button>
+      <div class="card-title">${esc(img.title||'Image')}</div>
+      <img class="img-th" src="${img.data}" alt="">
+      ${img.notes?`<div class="card-body">${esc(img.notes)}</div>`:''}</div>`).join('')}
+    <button class="btn bs fw" onclick="addAttach('image')">+ Add Photo</button>
+    <div class="sec">Documents &amp; Sources</div>
+    ${p.documents.map((d,i)=>`<div class="card"><button class="card-del" onclick="rmAttach('documents',${i})">✕</button>
+      <div class="card-title">${esc(d.title)}</div>
+      ${d.source?`<div class="card-sub">${esc(d.source)}</div>`:''}
+      ${d.notes?`<div class="card-body">${esc(d.notes)}</div>`:''}
+      ${d.data?`<button class="btn bs" style="font-size:12px;margin-top:6px" onclick="viewDoc(${i})">View file</button>`:''}</div>`).join('')}
+    <button class="btn bs fw" onclick="addAttach('document')">+ Add Document</button>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// DATA MUTATIONS
+// ════════════════════════════════════════════════════════════
+function up(field,val){
+  if(!curId)return;db.people[curId][field]=val;save();
+  if(['name','role'].includes(field))document.getElementById('pt').textContent=db.people[curId].name||'Unknown Person';
+}
+function upV(field,val){if(!curId)return;db.people[curId].vitals[field]=val;save();}
+function setDead(val){if(!curId)return;db.people[curId].deceased=val;save();panelUpdate();}
+function addTag(){const el=document.getElementById('newtag');if(!el||!el.value.trim())return;db.people[curId].tags.push(el.value.trim());el.value='';save();panelUpdate();}
+function rmTag(i){db.people[curId].tags.splice(i,1);save();panelUpdate();}
+function delPerson(){
+  if(!confirm('Delete this person and all their links?'))return;
+  const wasEgo=curId===egoId;
+  delete db.people[curId];
+  db.links=db.links.filter(l=>l.from!==curId&&l.to!==curId);
+  save();panelClose();
+  if(wasEgo)egoId=findDefault();
+  renderEgo();
+}
+function rmMulti(f,i){db.people[curId][f].splice(i,1);save();panelUpdate();}
+function rmAttach(f,i){db.people[curId][f].splice(i,1);save();panelUpdate();}
+function rmLink(lid2){db.links=db.links.filter(l=>l.id!==lid2);save();panelUpdate();renderEgo();}
+function toggleDub(lid2){const l=db.links.find(l=>l.id===lid2);if(l){l.dubious=!l.dubious;save();panelUpdate();renderEgo();}}
+
+// ════════════════════════════════════════════════════════════
+// ADD MULTI / ATTACH
+// ════════════════════════════════════════════════════════════
+let _mf='',_at='',_pf=null;
+function addMulti(field){
+  _mf=field;let form='';
+  if(field==='residences')form=`
+    <div class="f"><label>Place</label><input type="text" id="m0" placeholder="Town, county, country…"></div>
+    <div style="display:flex;gap:8px">
+      <div class="f" style="flex:1"><label>From</label><input type="text" id="m1"></div>
+      <div class="f" style="flex:1"><label>To</label><input type="text" id="m2"></div>
+    </div>
+    <div class="f"><label>Notes</label><textarea id="m3"></textarea></div>`;
+  if(field==='occupations')form=`
+    <div class="f"><label>Job / Role</label><input type="text" id="m0"></div>
+    <div class="f"><label>Employer</label><input type="text" id="m1"></div>
+    <div class="f"><label>Place</label><input type="text" id="m2"></div>
+    <div style="display:flex;gap:8px">
+      <div class="f" style="flex:1"><label>From</label><input type="text" id="m3"></div>
+      <div class="f" style="flex:1"><label>To</label><input type="text" id="m4"></div>
+    </div>`;
+  if(field==='marriages')form=`
+    <div class="f"><label>Partner's Name</label><input type="text" id="m0"></div>
+    <div class="f"><label>Date</label><input type="text" id="m1" placeholder="e.g. 14 Jun 1923"></div>
+    <div class="f"><label>Place</label><input type="text" id="m2"></div>
+    <div class="f"><label>Status</label><select id="m3"><option value="">Married</option><option value="divorced">Divorced</option><option value="separated">Separated</option><option value="common-law">Common-law</option><option value="unofficial">Unofficial</option><option value="unclear">Unclear</option></select></div>
+    <div class="f"><label>Notes</label><textarea id="m4"></textarea></div>`;
+  if(field==='education')form=`
+    <div class="f"><label>School / Institution</label><input type="text" id="m0"></div>
+    <div class="f"><label>Qualification</label><input type="text" id="m1"></div>
+    <div style="display:flex;gap:8px">
+      <div class="f" style="flex:1"><label>From</label><input type="text" id="m2"></div>
+      <div class="f" style="flex:1"><label>To</label><input type="text" id="m3"></div>
+    </div>`;
+  panelOpen('Add entry',`${form}<div class="brow"><button class="btn bp" onclick="saveMulti()">Save</button><button class="btn bs" onclick="curTab='life';panelUpdate()">Cancel</button></div>`);
+}
+function saveMulti(){
+  const v=n=>{const e=document.getElementById('m'+n);return e?e.value.trim():''};
+  const sv=n=>{const e=document.getElementById('m'+n);return e?e.value:''};
+  let e={};
+  if(_mf==='residences')e={place:v(0),from:v(1),to:v(2),notes:v(3)};
+  else if(_mf==='occupations')e={job:v(0),employer:v(1),place:v(2),from:v(3),to:v(4)};
+  else if(_mf==='marriages')e={partnerName:v(0),date:v(1),place:v(2),status:sv(3),notes:v(4)};
+  else if(_mf==='education')e={school:v(0),qualification:v(1),from:v(2),to:v(3)};
+  db.people[curId][_mf].push(e);save();curTab='life';panelUpdate();
+}
+function addAttach(type){
+  _at=type;_pf=null;let form='';
+  if(type==='anecdote')form=`
+    <div class="f"><label>Title</label><input type="text" id="a0" placeholder="e.g. The crossing to America"></div>
+    <div class="f"><label>Date / Period</label><input type="text" id="a1" placeholder="Optional"></div>
+    <div class="f"><label>Story</label><textarea id="a2" style="min-height:120px"></textarea></div>`;
+  if(type==='image')form=`
+    <div class="f"><label>Title / Caption</label><input type="text" id="a0"></div>
+    <div class="f"><label>Choose Image</label><input type="file" id="a-file" accept="image/*" onchange="prevImg(this)"></div>
+    <img id="a-prev" style="display:none;max-width:100%;max-height:140px;border-radius:8px;margin:6px 0">
+    <div class="f"><label>Notes</label><textarea id="a1"></textarea></div>`;
+  if(type==='document')form=`
+    <div class="f"><label>Title</label><input type="text" id="a0" placeholder="e.g. Birth certificate 1899"></div>
+    <div class="f"><label>Source / Reference</label><input type="text" id="a1" placeholder="e.g. GRO ref, archive URL…"></div>
+    <div class="f"><label>Attach File <span style="text-transform:none;font-weight:normal">(optional)</span></label><input type="file" id="a-file" onchange="loadDoc(this)"></div>
+    <div class="f"><label>Notes</label><textarea id="a2"></textarea></div>`;
+  const back=type==='anecdote'?'notes':'docs';
+  panelOpen('Add '+type,`${form}<div class="brow"><button class="btn bp" onclick="saveAttach()">Save</button><button class="btn bs" onclick="curTab='${back}';panelUpdate()">Cancel</button></div>`);
+}
+function prevImg(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{_pf=e.target.result;const i=document.getElementById('a-prev');i.src=_pf;i.style.display='block';};r.readAsDataURL(f);}
+function loadDoc(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{_pf=e.target.result;};r.readAsDataURL(f);}
+function saveAttach(){
+  const v=n=>{const e=document.getElementById('a'+n);return e?e.value.trim():''};
+  if(_at==='anecdote')db.people[curId].anecdotes.push({title:v(0),date:v(1),text:v(2)});
+  else if(_at==='image')db.people[curId].images.push({title:v(0),data:_pf,notes:v(1)});
+  else if(_at==='document')db.people[curId].documents.push({title:v(0),source:v(1),notes:v(2),data:_pf});
+  _pf=null;save();curTab=_at==='anecdote'?'notes':'docs';panelUpdate();
+}
+function viewDoc(i){const d=db.people[curId].documents[i];if(!d||!d.data)return;const w=window.open();w.document.write(`<img src="${d.data}" style="max-width:100%">`);}
+
+// ════════════════════════════════════════════════════════════
+// LINK EXISTING
+// ════════════════════════════════════════════════════════════
+function linkEx(id,relType){
+  const others=Object.keys(db.people).filter(pid=>pid!==id);
+  if(!others.length){alert('No other people yet.');return;}
+  const rows=others.sort((a,b)=>(db.people[a].name||'').localeCompare(db.people[b].name||'')).map(pid=>{
+    const p=db.people[pid];
+    return`<div class="idx-item" onclick="doLink('${id}','${relType}','${pid}')">
+      <div class="idx-av" style="background:${avCol(pid)}">${initials(p.name)}</div>
+      <div class="idx-info"><div class="idx-name">${esc(p.name||'Unknown')}</div>
+      <div class="idx-sub">${esc(p.role||'')} ${p.vitals.birthDate?'b.'+p.vitals.birthDate:''}</div></div>
+    </div>`;
+  }).join('');
+  panelOpen('Link existing as '+relType,`
+    <div class="chk"><input type="checkbox" id="le-dub"><label for="le-dub">Mark relationship as uncertain</label></div>
+    <div style="border:1px solid var(--parch3);border-radius:8px;overflow:hidden;margin-bottom:12px">${rows}</div>
+    <button class="btn bs" onclick="curTab='rels';panelUpdate()">Cancel</button>`);
+}
+function doLink(id,relType,targetId){
+  const dub=document.getElementById('le-dub')?.checked||false;
+  if(relType==='sibling'){
+    const pars=parents(id);
+    if(pars.length){
+      pars.forEach(pid=>{if(!db.links.find(l=>l.type==='par'&&l.from===pid&&l.to===targetId))db.links.push({id:lid(),type:'par',from:pid,to:targetId,dubious:dub});});
+    }else{
+      const sp=blank('');sp.unknown=true;sp.role='unknown parent';db.people[sp.id]=sp;
+      db.links.push({id:lid(),type:'par',from:sp.id,to:id,dubious:true});
+      db.links.push({id:lid(),type:'par',from:sp.id,to:targetId,dubious:true});
+    }
+  }else if(relType==='parent') db.links.push({id:lid(),type:'par',from:targetId,to:id,dubious:dub});
+  else if(relType==='child')   db.links.push({id:lid(),type:'par',from:id,to:targetId,dubious:dub});
+  else if(relType==='partner') db.links.push({id:lid(),type:'par2',from:id,to:targetId,dubious:dub});
+  save();renderEgo();curTab='rels';panelUpdate();
+}
+
+// ════════════════════════════════════════════════════════════
+// INDEX
+// ════════════════════════════════════════════════════════════
+function initials(name){if(!name)return'?';const w=name.trim().split(/\s+/);return(w[0][0]+(w.length>1?w[w.length-1][0]:'')).toUpperCase();}
+function avCol(id){const cols=['#8a6a50','#5a3e28','#3a6b3a','#2a5080','#8b3a2a','#b8860b'];let h=0;for(const c of id)h=(h*31+c.charCodeAt(0))&0xffffff;return cols[Math.abs(h)%cols.length];}
+function renderIndex(q){
+  const list=document.getElementById('index-list');if(!list)return;
+  q=(q||'').toLowerCase().trim();
+  let ids=Object.keys(db.people);
+  if(q)ids=ids.filter(id=>{const p=db.people[id];return(p.name||'').toLowerCase().includes(q)||(p.role||'').toLowerCase().includes(q)||(p.vitals.birthPlace||'').toLowerCase().includes(q)||(p.notes||'').toLowerCase().includes(q)||(p.tags||[]).some(t=>t.toLowerCase().includes(q));});
+  ids.sort((a,b)=>(db.people[a].name||'').localeCompare(db.people[b].name||''));
+  if(!ids.length){list.innerHTML=`<p style="padding:20px;text-align:center;color:var(--ink3);font-size:14px">${q?'No results':'No people added yet'}</p>`;return;}
+  list.innerHTML=ids.map(id=>{
+    const p=db.people[id];const dead=isDead(p);
+    const sub=[p.role,p.vitals.birthDate?'b.'+p.vitals.birthDate:'',p.vitals.birthPlace].filter(Boolean).join(' · ');
+    return`<div class="idx-item" onclick="showView('ego');setEgo('${id}');openDetail('${id}')">
+      <div class="idx-av" style="background:${avCol(id)}">${initials(p.name)}</div>
+      <div class="idx-info"><div class="idx-name">${esc(p.name||'Unknown')}${dead?' †':''}</div>
+      <div class="idx-sub">${esc(sub)||'No details'}</div></div>
+      <span class="idx-badge ${dead?'badge-dead':'badge-alive'}">${dead?'Deceased':'Living'}</span>
+    </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════
+// DATA VIEW
+// ════════════════════════════════════════════════════════════
+function renderStats(){
+  const el=document.getElementById('data-stats');if(!el)return;
+  const ppl=Object.values(db.people);
+  const living=ppl.filter(p=>!isDead(p)).length;
+  el.innerHTML=`${ppl.length} people · ${living} living · ${ppl.length-living} deceased · ${db.links.length} relationships`;
+}
+function exportData(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='family-tree-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(u);}
+function importData(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d.people){db=d;db.links=db.links||[];db.nextId=db.nextId||1;save();egoId=findDefault();renderEgo();renderStats();alert('Imported.');}else alert('Invalid file.');}catch{alert('Could not read file.');}};r.readAsText(f);}
+function clearAll(){if(!confirm('Delete everything?'))return;db={people:{},links:[],nextId:1};save();egoId=null;renderEgo();renderStats();}
+
+// ════════════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════════════
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function fmtDates(p){const v=p.vitals||{};const a=[];if(v.birthDate)a.push('b.'+v.birthDate);if(v.deathDate)a.push('d.'+v.deathDate);return a.join(' · ')||(v.birthPlace||'');}
+
+// ════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════
+load();
+egoId=findDefault();
+showView('ego');
+document.getElementById('index-view').style.display='none';
+document.getElementById('data-view').style.display='none';
+window.addEventListener('resize',()=>{if(curView==='ego')renderEgo();});
+
+// Register service worker for offline use + update notifications
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(reg=>{
+    reg.addEventListener('updatefound',()=>{
+      const newWorker=reg.installing;
+      newWorker.addEventListener('statechange',()=>{
+        if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
+          // New version available — show a gentle toast
+          const toast=document.createElement('div');
+          toast.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parch);padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+          toast.innerHTML='Update available <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Refresh</button>';
+          document.body.appendChild(toast);
+        }
+      });
+    });
+  });
+}
+</script>
+</body>
+</html>
