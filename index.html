@@ -39,8 +39,6 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 #ego-view{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
 #ego-canvas-wrap{flex:1;position:relative;overflow:hidden;touch-action:none;cursor:grab}
 #ego-canvas-wrap:active{cursor:grabbing}
-
-/* The pan/zoom container — all nodes live here */
 #ego-canvas{
   position:absolute;top:0;left:0;
   width:3000px;height:3000px;
@@ -49,7 +47,6 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 }
 #ego-svg{position:absolute;top:0;left:0;width:3000px;height:3000px;pointer-events:none}
 
-/* Zoom controls — outside the canvas so they stay put */
 .zoom-ctrl{
   position:absolute;bottom:56px;right:14px;
   display:flex;flex-direction:column;gap:5px;z-index:15;
@@ -69,7 +66,8 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 #index-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .idx-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--parch3);cursor:pointer}
 .idx-item:active{background:var(--parch2)}
-.idx-av{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:14px;font-weight:bold;color:#fff}
+.idx-av{width:40px;height:40px;border-radius:50%;flex-shrink:0;overflow:hidden;background:var(--parch3);display:flex;align-items:center;justify-content:center}
+.idx-av img{width:100%;height:100%;object-fit:cover}
 .idx-info{flex:1;min-width:0}
 .idx-name{font-family:var(--serif);font-size:14px;font-weight:bold;color:var(--ink)}
 .idx-sub{font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -86,57 +84,64 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
   position:absolute;border-radius:12px;cursor:pointer;
   user-select:none;-webkit-user-select:none;
   transition:box-shadow .15s,transform .15s;
-  display:flex;flex-direction:column;justify-content:center;
+  display:flex;flex-direction:row;align-items:center;gap:8px;
 }
 .enode:active{transform:scale(.97)}
 
+/* Avatar circle on every node */
+.enode-av{
+  flex-shrink:0;border-radius:50%;overflow:hidden;
+  background:var(--parch3);
+  display:flex;align-items:center;justify-content:center;
+}
+.enode-av img{width:100%;height:100%;object-fit:cover;display:block}
+.enode-body{flex:1;min-width:0;display:flex;flex-direction:column}
+
 /* centre / ego node */
 .enode-ego{
-  width:168px;height:90px;padding:10px 12px;
+  width:180px;min-height:90px;padding:10px 12px;
   background:var(--ink);color:var(--parch);
   border:none;
   box-shadow:0 4px 20px rgba(44,31,14,.28);
 }
+.enode-ego .enode-av{width:48px;height:48px;background:rgba(245,239,224,.15)}
 .enode-ego .en-role{color:rgba(245,239,224,.6)}
 .enode-ego .en-name{color:var(--parch)}
 .enode-ego .en-dates{color:rgba(245,239,224,.7)}
 
 /* relation nodes */
 .enode-rel{
-  width:148px;min-height:74px;padding:8px 10px;
+  width:158px;min-height:76px;padding:8px 10px;
   background:var(--parch2);
   border:1.5px solid var(--bord);
   box-shadow:0 2px 10px rgba(44,31,14,.1);
 }
+.enode-rel .enode-av{width:38px;height:38px}
 .enode-rel:hover{box-shadow:0 4px 16px rgba(44,31,14,.18)}
 .enode-rel.dead{background:#eae8e2;border-color:#ccc}
 .enode-rel.unknown{background:var(--parch3);border-style:dashed;opacity:.78}
 .enode-rel.sel{box-shadow:0 0 0 2px var(--accent)}
 
-/* expand stub — shown when a relation node has further connections */
 .enode-rel.expandable::after{
   content:'';position:absolute;width:8px;height:8px;border-radius:50%;
   background:var(--ink3);opacity:.5;
 }
-/* position the expand dot based on data-dir */
 .enode-rel[data-dir="up"].expandable::after{top:-5px;left:50%;transform:translateX(-50%)}
 .enode-rel[data-dir="down"].expandable::after{bottom:-5px;left:50%;transform:translateX(-50%)}
 .enode-rel[data-dir="left"].expandable::after{left:-5px;top:50%;transform:translateY(-50%)}
 .enode-rel[data-dir="right"].expandable::after{right:-5px;top:50%;transform:translateY(-50%)}
 
-.en-role{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
-.en-name{font-family:var(--serif);font-size:13px;font-weight:bold;line-height:1.3;margin-bottom:1px}
-.en-dates{font-size:11px;color:var(--ink2)}
+.en-role{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:1px}
+.en-name{font-family:var(--serif);font-size:13px;font-weight:bold;line-height:1.25;margin-bottom:1px}
+.en-maiden{font-size:10px;color:var(--ink3);font-style:italic;margin-bottom:1px}
+.en-dates{font-size:10px;color:var(--ink2)}
 .enode-ego .en-dates{color:rgba(245,239,224,.7)}
 .enode-rel.dead .en-name{color:var(--dead)}
 
-/* section labels on canvas */
 .elabel{
   position:absolute;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
   color:var(--ink3);pointer-events:none;white-space:nowrap;
 }
-
-/* add button (+ ring on canvas) */
 .eadd{
   position:absolute;width:30px;height:30px;border-radius:50%;
   border:2px dashed rgba(44,31,14,.25);background:transparent;
@@ -192,10 +197,13 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 .tag{display:inline-block;background:var(--parch3);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--ink2);margin:2px 3px 2px 0}
 .tag.dub{background:#ffeeba;color:#856404}
 
+/* Profile photo in vitals */
+.photo-wrap{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.photo-circle{width:72px;height:72px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--parch3);border:2px solid var(--bord)}
+.photo-circle img{width:100%;height:100%;object-fit:cover;display:block}
+
 /* ── PRINT ── */
-@media print{
-  #app,#overlay,#panel{display:none!important}
-}
+@media print{#app,#overlay,#panel{display:none!important}}
 </style>
 </head>
 <body>
@@ -208,14 +216,11 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
   </div>
   <div id="views">
 
-    <!-- EGO / TREE VIEW -->
     <div id="ego-view">
       <div id="ego-canvas-wrap">
-        <!-- Pan/zoom canvas — all nodes live here -->
         <div id="ego-canvas">
           <svg id="ego-svg"></svg>
         </div>
-        <!-- Zoom controls (fixed to wrap, not canvas) -->
         <div class="zoom-ctrl">
           <button class="zoom-btn" title="Zoom in" onclick="zoomBy(1.3)">+</button>
           <button class="zoom-btn" title="Zoom out" onclick="zoomBy(0.77)">−</button>
@@ -224,13 +229,11 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
       </div>
     </div>
 
-    <!-- INDEX -->
     <div id="index-view">
       <div id="index-search"><input id="idx-q" type="search" placeholder="Search all people…" oninput="renderIndex(this.value)"></div>
       <div id="index-list"></div>
     </div>
 
-    <!-- DATA -->
     <div id="data-view">
       <div id="data-body">
         <div class="sec">Export</div>
@@ -259,6 +262,11 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 
 <script>
 // ════════════════════════════════════════════════════════════
+// SILHOUETTE — default avatar when no photo is set
+// ════════════════════════════════════════════════════════════
+const SILHOUETTE="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='8' r='4.5' fill='%238a6a50'/%3E%3Cpath d='M3 21c0-5 4-9 9-9s9 4 9 9' stroke='%238a6a50' stroke-width='0' fill='%238a6a50'/%3E%3C/svg%3E";
+
+// ════════════════════════════════════════════════════════════
 // DATA
 // ════════════════════════════════════════════════════════════
 let db={people:{},links:[],nextId:1};
@@ -267,10 +275,14 @@ function nid(){return 'p'+(db.nextId++)}
 function lid(){return 'l'+Date.now()+Math.random().toString(36).slice(2,5)}
 
 function blank(name){
-  return{id:nid(),name:name||'',role:'',unknown:false,dubious:false,deceased:false,notes:'',
+  return{
+    id:nid(),name:name||'',maidenName:'',role:'',
+    unknown:false,dubious:false,deceased:false,notes:'',
+    phone:'',profilePhoto:null,
     vitals:{birthDate:'',birthPlace:'',deathDate:'',deathPlace:'',burialPlace:''},
     residences:[],occupations:[],marriages:[],education:[],
-    anecdotes:[],images:[],documents:[],tags:[]};
+    anecdotes:[],images:[],documents:[],tags:[]
+  };
 }
 
 function save(){try{localStorage.setItem('ft4_db',JSON.stringify(db))}catch(e){}}
@@ -286,8 +298,14 @@ function load(){
   Object.values(db.people).forEach(p=>{
     if(p.deceased===undefined)p.deceased=isLikelyDead(p);
     p.vitals=p.vitals||{birthDate:'',birthPlace:'',deathDate:'',deathPlace:'',burialPlace:''};
+    // Migrate new fields
+    if(p.maidenName===undefined)p.maidenName='';
+    if(p.phone===undefined)p.phone='';
+    if(p.profilePhoto===undefined)p.profilePhoto=null;
     ['residences','occupations','marriages','education','anecdotes','images','documents','tags']
       .forEach(f=>{if(!p[f])p[f]=[];});
+    // Migrate anniversary on marriages
+    p.marriages.forEach(m=>{if(m.anniversary===undefined)m.anniversary='';});
   });
 }
 
@@ -319,16 +337,14 @@ function isDead(p){return p.deceased||isLikelyDead(p)}
 // ════════════════════════════════════════════════════════════
 // PAN / ZOOM
 // ════════════════════════════════════════════════════════════
-const CANVAS_W=3000, CANVAS_H=3000;
-const CANVAS_CX=1500, CANVAS_CY=1400; // ego centre in canvas-space
-
+const CANVAS_W=3000,CANVAS_H=3000;
+const CANVAS_CX=1500,CANVAS_CY=1400;
 let vp={x:0,y:0,scale:1};
 
 function applyVP(){
   const c=document.getElementById('ego-canvas');
   if(c)c.style.transform=`translate(${vp.x}px,${vp.y}px) scale(${vp.scale})`;
 }
-
 function resetVP(){
   const wrap=document.getElementById('ego-canvas-wrap');
   if(!wrap)return;
@@ -337,83 +353,60 @@ function resetVP(){
   vp={x:W/2-CANVAS_CX,y:H/2-CANVAS_CY,scale:1};
   applyVP();
 }
-
 function zoomBy(factor,cx,cy){
   const wrap=document.getElementById('ego-canvas-wrap');
   if(!wrap)return;
   const W=wrap.clientWidth||window.innerWidth;
   const H=wrap.clientHeight||(window.innerHeight-46);
-  cx=cx??W/2; cy=cy??H/2;
+  cx=cx??W/2;cy=cy??H/2;
   const newScale=Math.min(4,Math.max(0.18,vp.scale*factor));
   vp.x=cx-(cx-vp.x)*(newScale/vp.scale);
   vp.y=cy-(cy-vp.y)*(newScale/vp.scale);
   vp.scale=newScale;
   applyVP();
 }
-
 function initPanZoom(){
   const wrap=document.getElementById('ego-canvas-wrap');
   let t0=null,vp0=null,pinch0=null,moved=false,blockClick=false;
-
-  function pdist(touches){
-    const dx=touches[0].clientX-touches[1].clientX;
-    const dy=touches[0].clientY-touches[1].clientY;
-    return Math.sqrt(dx*dx+dy*dy);
-  }
-
+  function pdist(t){const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy);}
   wrap.addEventListener('touchstart',e=>{
-    moved=false;
-    vp0={...vp};
-    if(e.touches.length===1){
-      t0={x:e.touches[0].clientX,y:e.touches[0].clientY};
-      pinch0=null;
-    }else if(e.touches.length>=2){
+    moved=false;vp0={...vp};
+    if(e.touches.length===1){t0={x:e.touches[0].clientX,y:e.touches[0].clientY};pinch0=null;}
+    else if(e.touches.length>=2){
       const r=wrap.getBoundingClientRect();
       const cx=(e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
       const cy=(e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
-      pinch0={dist:pdist(e.touches),cx,cy,vp:{...vp}};
-      t0=null;
+      pinch0={dist:pdist(e.touches),cx,cy,vp:{...vp}};t0=null;
     }
   },{passive:true});
-
   wrap.addEventListener('touchmove',e=>{
     e.preventDefault();
     if(e.touches.length===1&&t0&&!pinch0){
-      const dx=e.touches[0].clientX-t0.x;
-      const dy=e.touches[0].clientY-t0.y;
+      const dx=e.touches[0].clientX-t0.x,dy=e.touches[0].clientY-t0.y;
       if(Math.abs(dx)>5||Math.abs(dy)>5)moved=true;
       if(moved){vp.x=vp0.x+dx;vp.y=vp0.y+dy;applyVP();}
     }else if(e.touches.length>=2&&pinch0){
       moved=true;
-      const dist=pdist(e.touches);
-      const factor=dist/pinch0.dist;
+      const dist=pdist(e.touches),factor=dist/pinch0.dist;
       const newScale=Math.min(4,Math.max(0.18,pinch0.vp.scale*factor));
-      const {cx,cy}=pinch0;
+      const{cx,cy}=pinch0;
       vp.scale=newScale;
       vp.x=cx-(cx-pinch0.vp.x)*(newScale/pinch0.vp.scale);
       vp.y=cy-(cy-pinch0.vp.y)*(newScale/pinch0.vp.scale);
       applyVP();
     }
   },{passive:false});
-
   wrap.addEventListener('touchend',e=>{
     if(moved){blockClick=true;setTimeout(()=>{blockClick=false;},350);}
     if(e.touches.length<2)pinch0=null;
     if(e.touches.length===0)t0=null;
   });
-
-  // Suppress synthetic click after a drag
-  wrap.addEventListener('click',e=>{
-    if(blockClick){e.stopPropagation();e.preventDefault();blockClick=false;}
-  },true);
-
-  // Mouse drag (drag from background, not from nodes/buttons)
+  wrap.addEventListener('click',e=>{if(blockClick){e.stopPropagation();e.preventDefault();blockClick=false;}},true);
   let mDown=false,m0={},mvp0={};
   wrap.addEventListener('mousedown',e=>{
     if(e.button!==0)return;
     if(e.target.closest('.enode,.eadd,.zoom-ctrl,.elegend'))return;
-    mDown=true;moved=false;
-    m0={x:e.clientX,y:e.clientY};mvp0={...vp};
+    mDown=true;moved=false;m0={x:e.clientX,y:e.clientY};mvp0={...vp};
   });
   document.addEventListener('mousemove',e=>{
     if(!mDown)return;
@@ -422,8 +415,6 @@ function initPanZoom(){
     if(moved){vp.x=mvp0.x+dx;vp.y=mvp0.y+dy;applyVP();}
   });
   document.addEventListener('mouseup',()=>{mDown=false;});
-
-  // Mouse wheel zoom
   wrap.addEventListener('wheel',e=>{
     e.preventDefault();
     const r=wrap.getBoundingClientRect();
@@ -432,33 +423,24 @@ function initPanZoom(){
 }
 
 // ════════════════════════════════════════════════════════════
-// EGO VIEW — centred graph
+// EGO VIEW
 // ════════════════════════════════════════════════════════════
 let egoId=null;
-
 function findDefault(){
-  const ids=Object.keys(db.people);
-  if(!ids.length)return null;
+  const ids=Object.keys(db.people);if(!ids.length)return null;
   const me=ids.find(id=>/^me$/i.test((db.people[id].role||'').trim()));
   return me||ids[0];
 }
-
 function setEgo(id){
-  egoId=id;
-  dismissQuickBar();
-  renderEgo();
-  resetVP(); // re-centre the view on new ego
+  egoId=id;dismissQuickBar();renderEgo();resetVP();
   const p=db.people[id];
-  document.getElementById('topbar-title').textContent=
-    p?(p.name||'Unknown')+' · Family Tree':'🌳 Family Tree';
+  document.getElementById('topbar-title').textContent=p?(p.name||'Unknown')+' · Family Tree':'🌳 Family Tree';
   const defaultId=findDefault();
   const homeBtn=document.getElementById('btn-home');
   if(id!==defaultId&&defaultId){
     if(!homeBtn){
       const b=document.createElement('button');
-      b.className='tb-btn';b.id='btn-home';
-      b.textContent='⌂ Me';
-      b.title='Return to your own view';
+      b.className='tb-btn';b.id='btn-home';b.textContent='⌂ Me';
       b.onclick=()=>setEgo(defaultId);
       document.getElementById('topbar').insertBefore(b,document.getElementById('btn-ego'));
     }
@@ -468,20 +450,14 @@ function setEgo(id){
   }
 }
 
-// ── LAYOUT CONSTANTS ──────────────────────────────────────
-const EW=168,EH=92;
-const RW=150,RH=78;
-const COL_GAP=18;
-const ROW_GAP=18;
-const V_DIST=110;
-const H_DIST=90;
+const EW=180,EH=96;
+const RW=158,RH=80;
+const COL_GAP=18,ROW_GAP=18,V_DIST=112,H_DIST=90;
 
 function renderEgo(){
   const wrap=document.getElementById('ego-canvas-wrap');
   const canvas=document.getElementById('ego-canvas');
   const svg=document.getElementById('ego-svg');
-
-  // Clear previous content
   canvas.querySelectorAll('.enode,.elabel,.eadd').forEach(el=>el.remove());
   wrap.querySelectorAll('.elegend').forEach(el=>el.remove());
   svg.innerHTML='';
@@ -500,25 +476,15 @@ function renderEgo(){
     return;
   }
   canvas.querySelector('.empty-state')?.remove();
-
   if(!egoId||!db.people[egoId])egoId=findDefault();
   if(!egoId)return;
 
-  // Use fixed canvas-space centre for ego node
-  const ecx=CANVAS_CX;
-  const ecy=CANVAS_CY;
-  const ex=ecx-EW/2;
-  const ey=ecy-EH/2;
-
-  const ego=db.people[egoId];
-  const myParents  =parents(egoId);
-  const myChildren =children(egoId);
-  const myPartners =partners(egoId);
-  const mySiblings =siblings(egoId);
-
+  const ecx=CANVAS_CX,ecy=CANVAS_CY;
+  const ex=ecx-EW/2,ey=ecy-EH/2;
   const edges=[];
 
-  // ── PARENTS ──────────────────────────────────────────────
+  // ── PARENTS ──
+  const myParents=parents(egoId);
   const parentRowY=ey-V_DIST-RH;
   if(myParents.length){
     const pos=spreadH(myParents.length,RW,ROW_GAP,ecx);
@@ -529,14 +495,14 @@ function renderEgo(){
       edges.push({x1:ecx,y1:ey,x2:nx+RW/2,y2:ny+RH,rel:'parent',dubious:lk?.dubious});
     });
     makeLabel(canvas,ecx,parentRowY-20,'Parents');
-    const lastX=spreadH(myParents.length,RW,ROW_GAP,ecx)[myParents.length-1]+RW+12;
-    makeAdd(canvas,lastX,parentRowY+RH/2-15,()=>addPersonFlow(egoId,'parent'));
+    makeAdd(canvas,spreadH(myParents.length,RW,ROW_GAP,ecx)[myParents.length-1]+RW+12,parentRowY+RH/2-15,()=>addPersonFlow(egoId,'parent'));
   }else{
     makeLabel(canvas,ecx,parentRowY-20,'Parents');
     makeAdd(canvas,ecx-15,parentRowY+RH/2-15,()=>addPersonFlow(egoId,'parent'));
   }
 
-  // ── PARTNERS ─────────────────────────────────────────────
+  // ── PARTNERS ──
+  const myPartners=partners(egoId);
   const partnerColX=ex+EW+H_DIST;
   if(myPartners.length){
     const pos=spreadV(myPartners.length,RH,COL_GAP,ecy);
@@ -547,14 +513,14 @@ function renderEgo(){
       edges.push({x1:ex+EW,y1:ecy,x2:nx,y2:ny+RH/2,rel:'partner',dubious:lk?.dubious});
     });
     makeLabel(canvas,partnerColX+RW/2,pos[0]-20,'Partners / Spouses');
-    const lastY=spreadV(myPartners.length,RH,COL_GAP,ecy)[myPartners.length-1]+RH+10;
-    makeAdd(canvas,partnerColX+RW/2-15,lastY,()=>addPersonFlow(egoId,'partner'));
+    makeAdd(canvas,partnerColX+RW/2-15,spreadV(myPartners.length,RH,COL_GAP,ecy)[myPartners.length-1]+RH+10,()=>addPersonFlow(egoId,'partner'));
   }else{
     makeLabel(canvas,partnerColX+RW/2,ecy-RH/2-20,'Partners');
     makeAdd(canvas,partnerColX+RW/2-15,ecy-15,()=>addPersonFlow(egoId,'partner'));
   }
 
-  // ── CHILDREN ─────────────────────────────────────────────
+  // ── CHILDREN ──
+  const myChildren=children(egoId);
   const childRowY=ey+EH+V_DIST;
   if(myChildren.length){
     const pos=spreadH(myChildren.length,RW,ROW_GAP,ecx);
@@ -565,14 +531,14 @@ function renderEgo(){
       edges.push({x1:ecx,y1:ey+EH,x2:nx+RW/2,y2:ny,rel:'child',dubious:lk?.dubious});
     });
     makeLabel(canvas,ecx,childRowY+RH+8,'Children');
-    const lastX=spreadH(myChildren.length,RW,ROW_GAP,ecx)[myChildren.length-1]+RW+12;
-    makeAdd(canvas,lastX,childRowY+RH/2-15,()=>addPersonFlow(egoId,'child'));
+    makeAdd(canvas,spreadH(myChildren.length,RW,ROW_GAP,ecx)[myChildren.length-1]+RW+12,childRowY+RH/2-15,()=>addPersonFlow(egoId,'child'));
   }else{
     makeLabel(canvas,ecx,childRowY+RH+8,'Children');
     makeAdd(canvas,ecx-15,childRowY+RH/2-15,()=>addPersonFlow(egoId,'child'));
   }
 
-  // ── SIBLINGS ─────────────────────────────────────────────
+  // ── SIBLINGS ──
+  const mySiblings=siblings(egoId);
   const sibColX=ex-H_DIST-RW;
   if(mySiblings.length){
     const pos=spreadV(mySiblings.length,RH,COL_GAP,ecy);
@@ -582,36 +548,29 @@ function renderEgo(){
       edges.push({x1:ex,y1:ecy,x2:nx+RW,y2:ny+RH/2,rel:'sibling',dubious:false});
     });
     makeLabel(canvas,sibColX+RW/2,pos[0]-20,'Siblings');
-    const lastY=spreadV(mySiblings.length,RH,COL_GAP,ecy)[mySiblings.length-1]+RH+10;
-    makeAdd(canvas,sibColX+RW/2-15,lastY,()=>addPersonFlow(egoId,'sibling'));
+    makeAdd(canvas,sibColX+RW/2-15,spreadV(mySiblings.length,RH,COL_GAP,ecy)[mySiblings.length-1]+RH+10,()=>addPersonFlow(egoId,'sibling'));
   }else{
     makeLabel(canvas,sibColX+RW/2,ecy-RH/2-20,'Siblings');
     makeAdd(canvas,sibColX+RW/2-15,ecy-15,()=>addPersonFlow(egoId,'sibling'));
   }
 
-  // ── Ego node (drawn last so it's on top) ─────────────────
   makeNode(canvas,egoId,ex,ey,'ego');
 
-  // ── Draw edges ────────────────────────────────────────────
+  // ── Edges ──
   let svgH='';
   edges.forEach(e=>{
     let stroke,sw,dash='';
-    if(e.rel==='parent'||e.rel==='child'){
-      stroke='#5a3e28';sw=2;
-    }else if(e.rel==='partner'){
-      stroke='#8b3a2a';sw=1.5;dash='8,5';
-    }else{
-      stroke='#8a6a50';sw=1.5;dash='3,5';
-    }
+    if(e.rel==='parent'||e.rel==='child'){stroke='#5a3e28';sw=2;}
+    else if(e.rel==='partner'){stroke='#8b3a2a';sw=1.5;dash='8,5';}
+    else{stroke='#8a6a50';sw=1.5;dash='3,5';}
     if(e.dubious){stroke='#b8860b';dash='5,4';}
     const mx=(e.x1+e.x2)/2,my=(e.y1+e.y2)/2;
-    const dashAttr=dash?`stroke-dasharray="${dash}"`:'';
-    svgH+=`<path d="M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}" `+
-      `stroke="${stroke}" stroke-width="${sw}" fill="none" ${dashAttr} opacity=".85"/>`;
+    const da=dash?`stroke-dasharray="${dash}"`:'';
+    svgH+=`<path d="M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}" stroke="${stroke}" stroke-width="${sw}" fill="none" ${da} opacity=".85"/>`;
   });
   svg.innerHTML=svgH;
 
-  // ── Legend (fixed to wrap, not canvas) ───────────────────
+  // ── Legend ──
   const leg=document.createElement('div');
   leg.className='elegend';
   leg.style.cssText='position:absolute;bottom:12px;right:14px;background:rgba(245,239,224,.94);border:1px solid rgba(44,31,14,.12);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--ink2);pointer-events:none;line-height:1.8;z-index:10';
@@ -633,7 +592,6 @@ function spreadV(n,h,gap,anchorY){
   const out=[];for(let i=0;i<n;i++){out.push(y);y+=h+gap;}return out;
 }
 
-// ── Create a node element ─────────────────────────────────
 function makeNode(container,id,x,y,kind,dir){
   const p=db.people[id];if(!p)return;
   const dead=isDead(p);
@@ -646,39 +604,36 @@ function makeNode(container,id,x,y,kind,dir){
   el.id='enode-'+id;
   el.style.cssText=`left:${x}px;top:${y}px;width:${kind==='ego'?EW:RW}px;min-height:${kind==='ego'?EH:RH}px`;
   if(dir)el.setAttribute('data-dir',dir);
-
   if(kind!=='ego'){
     const hasMore=parents(id).length||children(id).length||partners(id).length;
     if(hasMore)el.classList.add('expandable');
   }
-
+  const photo=p.profilePhoto||SILHOUETTE;
+  const maiden=p.maidenName?`<div class="en-maiden">née ${esc(p.maidenName)}</div>`:'';
   el.innerHTML=
-    `<div class="en-role">${esc(p.role||'—')}</div>`+
-    `<div class="en-name">${esc(p.name||'Unknown')}${dead?' †':''}</div>`+
-    `<div class="en-dates">${fmtDates(p)}</div>`;
-
+    `<div class="enode-av"><img src="${photo}" alt=""></div>`+
+    `<div class="enode-body">`+
+      `<div class="en-role">${esc(p.role||'—')}</div>`+
+      `<div class="en-name">${esc(p.name||'Unknown')}${dead?' †':''}</div>`+
+      maiden+
+      `<div class="en-dates">${fmtDates(p)}</div>`+
+    `</div>`;
   el.addEventListener('click',()=>{
-    if(kind==='ego'){
-      openDetail(id);
-    }else{
-      if(el.classList.contains('sel')){
-        setEgo(id);
-      }else{
+    if(kind==='ego'){openDetail(id);}
+    else{
+      if(el.classList.contains('sel')){setEgo(id);}
+      else{
         document.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
-        el.classList.add('sel');
-        showQuickBar(id,el);
+        el.classList.add('sel');showQuickBar(id,el);
       }
     }
   });
-
   container.appendChild(el);
 }
 
-// ── Quick action bar ──────────────────────────────────────
 let quickBarEl=null;
 function showQuickBar(id,nodeEl){
   if(quickBarEl)quickBarEl.remove();
-  const p=db.people[id];
   const lk=linkBetween(id,egoId);
   const bar=document.createElement('div');
   bar.id='quick-bar';
@@ -694,36 +649,25 @@ function showQuickBar(id,nodeEl){
       ${lk.dubious?'⚑ Uncertain':'⚐ Certain'}<br><span style="font-size:10px;opacity:.7">tap to toggle</span>
     </button>`:''}
     <button onclick="dismissQuickBar()" style="width:44px;background:none;border:none;color:rgba(255,255,255,.6);font-size:20px;cursor:pointer">✕</button>`;
-  document.body.appendChild(bar);
-  quickBarEl=bar;
+  document.body.appendChild(bar);quickBarEl=bar;
 }
 function qbToggleDub(linkId){
   const l=db.links.find(l=>l.id===linkId);
   if(l){l.dubious=!l.dubious;save();renderEgo();dismissQuickBar();}
 }
 function dismissQuickBar(){
-  if(quickBarEl)quickBarEl.remove();
-  quickBarEl=null;
+  if(quickBarEl)quickBarEl.remove();quickBarEl=null;
   document.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
 }
-
-// ── Label ─────────────────────────────────────────────────
 function makeLabel(container,cx,y,text){
-  const el=document.createElement('div');
-  el.className='elabel';
-  el.textContent=text;
+  const el=document.createElement('div');el.className='elabel';el.textContent=text;
   el.style.cssText=`left:${cx}px;top:${y}px;transform:translateX(-50%)`;
   container.appendChild(el);
 }
-
-// ── Add button ────────────────────────────────────────────
 function makeAdd(container,x,y,cb){
-  const el=document.createElement('button');
-  el.className='eadd';
-  el.textContent='+';
+  const el=document.createElement('button');el.className='eadd';el.textContent='+';
   el.style.cssText=`left:${x}px;top:${y}px`;
-  el.addEventListener('click',cb);
-  container.appendChild(el);
+  el.addEventListener('click',cb);container.appendChild(el);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -755,8 +699,7 @@ function panelOpen(title,html){
 function panelClose(){
   document.getElementById('overlay').classList.remove('open');
   document.getElementById('panel').classList.remove('open');
-  curId=null;
-  dismissQuickBar();
+  curId=null;dismissQuickBar();
 }
 function panelUpdate(){
   const p=db.people[curId];if(!p)return;
@@ -775,6 +718,7 @@ function addPersonFlow(relId,relType){
   panelOpen(title,`
     ${sibNote}
     <div class="f"><label>Full Name</label><input id="ap-name" type="text" placeholder="Leave blank for 'Unknown'"></div>
+    <div class="f"><label>Maiden Name <span style="text-transform:none;font-weight:normal">(if applicable)</span></label><input id="ap-maiden" type="text" placeholder="Birth surname"></div>
     <div class="f"><label>Role / Label <span style="text-transform:none;font-weight:normal">(e.g. maternal grandfather)</span></label><input id="ap-role" type="text" placeholder="Optional"></div>
     <div class="chk"><input type="checkbox" id="ap-unk"><label for="ap-unk">Unknown / placeholder person</label></div>
     <div class="chk"><input type="checkbox" id="ap-dub"><label for="ap-dub">Relationship uncertain / disputed</label></div>
@@ -786,37 +730,31 @@ function addPersonFlow(relId,relType){
     </div>`);
   setTimeout(()=>{const el=document.getElementById('ap-name');if(el)el.focus();},80);
 }
-
 function doAddPerson(relId,relType){
   const name=document.getElementById('ap-name').value.trim();
+  const maiden=document.getElementById('ap-maiden')?.value.trim()||'';
   const role=document.getElementById('ap-role').value.trim();
   const unk=document.getElementById('ap-unk').checked;
   const dub=document.getElementById('ap-dub').checked;
   const dead=document.getElementById('ap-dead').checked;
   const ptEl=document.getElementById('ap-pt');
-
-  const p=blank(name);p.role=role;p.unknown=unk;p.dubious=dub;p.deceased=dead;
+  const p=blank(name);p.maidenName=maiden;p.role=role;p.unknown=unk;p.dubious=dub;p.deceased=dead;
   db.people[p.id]=p;
-
   if(relId){
     if(relType==='parent')  db.links.push({id:lid(),type:'par',from:p.id,to:relId,dubious:dub});
     else if(relType==='child')   db.links.push({id:lid(),type:'par',from:relId,to:p.id,dubious:dub});
     else if(relType==='partner') db.links.push({id:lid(),type:'par2',from:relId,to:p.id,dubious:dub,notes:ptEl?ptEl.value:''});
     else if(relType==='sibling'){
       const pars=parents(relId);
-      if(pars.length){
-        pars.forEach(pid=>db.links.push({id:lid(),type:'par',from:pid,to:p.id,dubious:dub}));
-      }else{
-        // Auto-create a shared unknown parent — use dub from the user's checkbox, not forced true
-        const sp=blank('');sp.unknown=true;sp.role='Unknown parent';
-        db.people[sp.id]=sp;
+      if(pars.length){pars.forEach(pid=>db.links.push({id:lid(),type:'par',from:pid,to:p.id,dubious:dub}));}
+      else{
+        const sp=blank('');sp.unknown=true;sp.role='Unknown parent';db.people[sp.id]=sp;
         db.links.push({id:lid(),type:'par',from:sp.id,to:relId,dubious:dub});
         db.links.push({id:lid(),type:'par',from:sp.id,to:p.id,dubious:dub});
       }
     }
   }
   if(Object.keys(db.people).length===1)egoId=p.id;
-
   save();panelClose();renderEgo();
   curId=p.id;curTab='vitals';
   panelOpen(p.name||'Unknown Person',buildDetailBody());
@@ -826,7 +764,6 @@ function doAddPerson(relId,relType){
 // DETAIL PANEL
 // ════════════════════════════════════════════════════════════
 const TABS=[['vitals','Vitals'],['life','Life Events'],['rels','Relationships'],['notes','Notes'],['docs','Documents']];
-
 function openDetail(id){curId=id;curTab='vitals';const p=db.people[id];if(!p)return;panelOpen(p.name||'Unknown Person',buildDetailBody());}
 function setTab(t){curTab=t;panelUpdate();}
 function buildDetailBody(){
@@ -846,8 +783,21 @@ function buildTab(){
 
 function bVitals(p){
   const dead=isDead(p);
+  const photo=p.profilePhoto||SILHOUETTE;
   return`
+    <div class="sec">Profile Photo</div>
+    <div class="photo-wrap">
+      <div class="photo-circle"><img id="pp-preview" src="${photo}" alt=""></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label class="btn bs" style="cursor:pointer;font-size:13px">
+          📷 Upload photo<input type="file" accept="image/*" onchange="setProfilePhoto(this)" style="display:none">
+        </label>
+        ${p.profilePhoto?`<button class="btn bs" style="font-size:13px" onclick="up('profilePhoto',null);renderEgo();panelUpdate()">Remove</button>`:''}
+      </div>
+    </div>
+    <div class="sec">Identity</div>
     <div class="f"><label>Full Name</label><input type="text" value="${esc(p.name)}" oninput="up('name',this.value)"></div>
+    <div class="f"><label>Maiden Name <span style="text-transform:none;font-weight:normal">(birth surname)</span></label><input type="text" value="${esc(p.maidenName||'')}" oninput="up('maidenName',this.value)" placeholder="e.g. Smith"></div>
     <div class="f"><label>Role / Label</label><input type="text" value="${esc(p.role)}" oninput="up('role',this.value)" placeholder="e.g. maternal grandfather"></div>
     <div class="chk"><input type="checkbox" id="v-unk" ${p.unknown?'checked':''} onchange="up('unknown',this.checked)"><label for="v-unk">Unknown / placeholder person</label></div>
     <div class="chk"><input type="checkbox" id="v-dub" ${p.dubious?'checked':''} onchange="up('dubious',this.checked)"><label for="v-dub">Identity uncertain / disputed</label></div>
@@ -860,6 +810,8 @@ function bVitals(p){
     <div class="f"><label>Date of Death</label><input type="text" value="${esc(p.vitals.deathDate)}" placeholder="Setting this marks as deceased" oninput="upV('deathDate',this.value)"></div>
     <div class="f"><label>Place of Death</label><input type="text" value="${esc(p.vitals.deathPlace)}" oninput="upV('deathPlace',this.value)"></div>
     <div class="f"><label>Burial Place</label><input type="text" value="${esc(p.vitals.burialPlace)}" oninput="upV('burialPlace',this.value)"></div>
+    <div class="sec">Contact</div>
+    <div class="f"><label>Phone</label><input type="tel" value="${esc(p.phone||'')}" oninput="up('phone',this.value)" placeholder="Optional"></div>
     <div class="sec">General Notes</div>
     <div class="f"><textarea oninput="up('notes',this.value)">${esc(p.notes)}</textarea></div>
     <div class="sec">Tags</div>
@@ -873,6 +825,20 @@ function bVitals(p){
       <button class="btn bs" onclick="printPerson('${p.id}')">🖨 Print Record</button>
       <button class="btn bd" onclick="delPerson()">Delete</button>
     </div>`;
+}
+
+function setProfilePhoto(inp){
+  const f=inp.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    up('profilePhoto',e.target.result);
+    const prev=document.getElementById('pp-preview');
+    if(prev)prev.src=e.target.result;
+    renderEgo();
+    // Refresh panel to show Remove button
+    panelUpdate();
+  };
+  r.readAsDataURL(f);
 }
 
 function bLife(p){
@@ -892,6 +858,7 @@ function bLife(p){
     ${p.marriages.map((m,i)=>`<div class="card"><button class="card-del" onclick="rmMulti('marriages',${i})">✕</button>
       <div class="card-title">${esc(m.partnerName||'?')}${m.status?' ('+esc(m.status)+')':''}</div>
       <div class="card-sub">${esc(m.date||'')}${m.place?' · '+esc(m.place):''}</div>
+      ${m.anniversary?`<div class="card-sub">🥂 Anniversary: ${esc(m.anniversary)}</div>`:''}
       ${m.notes?`<div class="card-body">${esc(m.notes)}</div>`:''}</div>`).join('')}
     <button class="btn bs fw" onclick="addMulti('marriages')">+ Add Marriage / Union</button>
     <div class="sec">Education</div>
@@ -936,7 +903,7 @@ function prow(pid,relId,ltype){
   const link=ltype!=='sib'?linkBetween(pid,relId):null;
   return`<div class="prow">
     <div class="prow-info">
-      <div class="prow-name">${esc(p.name||'Unknown')}${isDead(p)?' †':''}</div>
+      <div class="prow-name">${esc(p.name||'Unknown')}${isDead(p)?' †':''}${p.maidenName?' <span style="font-size:11px;color:var(--ink3);font-style:italic">née '+esc(p.maidenName)+'</span>':''}</div>
       <div class="prow-sub">${esc(p.role||'')}${link&&link.dubious?' · <span class="tag dub">uncertain</span>':''}</div>
     </div>
     <button class="btn bs" style="font-size:12px;padding:5px 9px" onclick="panelClose();setEgo('${pid}')">👁</button>
@@ -960,6 +927,9 @@ function bDocs(p){
     ${p.images.map((img,i)=>`<div class="card"><button class="card-del" onclick="rmAttach('images',${i})">✕</button>
       <div class="card-title">${esc(img.title||'Image')}</div>
       <img class="img-th" src="${img.data}" alt="">
+      <div style="margin-top:6px;display:flex;gap:6px">
+        <button class="btn bs" style="font-size:12px" onclick="useAsProfilePhoto(${i})">Use as profile photo</button>
+      </div>
       ${img.notes?`<div class="card-body">${esc(img.notes)}</div>`:''}</div>`).join('')}
     <button class="btn bs fw" onclick="addAttach('image')">+ Add Photo</button>
     <div class="sec">Documents &amp; Sources</div>
@@ -969,6 +939,11 @@ function bDocs(p){
       ${d.notes?`<div class="card-body">${esc(d.notes)}</div>`:''}
       ${d.data?`<button class="btn bs" style="font-size:12px;margin-top:6px" onclick="viewDoc(${i})">View file</button>`:''}</div>`).join('')}
     <button class="btn bs fw" onclick="addAttach('document')">+ Add Document</button>`;
+}
+function useAsProfilePhoto(i){
+  const p=db.people[curId];if(!p)return;
+  const img=p.images[i];if(!img||!img.data)return;
+  up('profilePhoto',img.data);renderEgo();panelUpdate();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1019,7 +994,8 @@ function addMulti(field){
     </div>`;
   if(field==='marriages')form=`
     <div class="f"><label>Partner's Name</label><input type="text" id="m0"></div>
-    <div class="f"><label>Date</label><input type="text" id="m1" placeholder="e.g. 14 Jun 1923"></div>
+    <div class="f"><label>Wedding Date</label><input type="text" id="m1" placeholder="e.g. 14 Jun 1923"></div>
+    <div class="f"><label>Anniversary Date <span style="text-transform:none;font-weight:normal">(recurring, e.g. 14 Jun)</span></label><input type="text" id="m5" placeholder="e.g. 14 Jun"></div>
     <div class="f"><label>Place</label><input type="text" id="m2"></div>
     <div class="f"><label>Status</label><select id="m3"><option value="">Married</option><option value="divorced">Divorced</option><option value="separated">Separated</option><option value="common-law">Common-law</option><option value="unofficial">Unofficial</option><option value="unclear">Unclear</option></select></div>
     <div class="f"><label>Notes</label><textarea id="m4"></textarea></div>`;
@@ -1038,7 +1014,7 @@ function saveMulti(){
   let e={};
   if(_mf==='residences')e={place:v(0),from:v(1),to:v(2),notes:v(3)};
   else if(_mf==='occupations')e={job:v(0),employer:v(1),place:v(2),from:v(3),to:v(4)};
-  else if(_mf==='marriages')e={partnerName:v(0),date:v(1),place:v(2),status:sv(3),notes:v(4)};
+  else if(_mf==='marriages')e={partnerName:v(0),date:v(1),anniversary:v(5),place:v(2),status:sv(3),notes:v(4)};
   else if(_mf==='education')e={school:v(0),qualification:v(1),from:v(2),to:v(3)};
   db.people[curId][_mf].push(e);save();curTab='life';panelUpdate();
 }
@@ -1081,7 +1057,7 @@ function linkEx(id,relType){
   const rows=others.sort((a,b)=>(db.people[a].name||'').localeCompare(db.people[b].name||'')).map(pid=>{
     const p=db.people[pid];
     return`<div class="idx-item" onclick="doLink('${id}','${relType}','${pid}')">
-      <div class="idx-av" style="background:${avCol(pid)}">${initials(p.name)}</div>
+      <div class="idx-av"><img src="${p.profilePhoto||SILHOUETTE}" alt=""></div>
       <div class="idx-info"><div class="idx-name">${esc(p.name||'Unknown')}</div>
       <div class="idx-sub">${esc(p.role||'')} ${p.vitals.birthDate?'b.'+p.vitals.birthDate:''}</div></div>
     </div>`;
@@ -1111,20 +1087,18 @@ function doLink(id,relType,targetId){
 // ════════════════════════════════════════════════════════════
 // INDEX
 // ════════════════════════════════════════════════════════════
-function initials(name){if(!name)return'?';const w=name.trim().split(/\s+/);return(w[0][0]+(w.length>1?w[w.length-1][0]:'')).toUpperCase();}
-function avCol(id){const cols=['#8a6a50','#5a3e28','#3a6b3a','#2a5080','#8b3a2a','#b8860b'];let h=0;for(const c of id)h=(h*31+c.charCodeAt(0))&0xffffff;return cols[Math.abs(h)%cols.length];}
 function renderIndex(q){
   const list=document.getElementById('index-list');if(!list)return;
   q=(q||'').toLowerCase().trim();
   let ids=Object.keys(db.people);
-  if(q)ids=ids.filter(id=>{const p=db.people[id];return(p.name||'').toLowerCase().includes(q)||(p.role||'').toLowerCase().includes(q)||(p.vitals.birthPlace||'').toLowerCase().includes(q)||(p.notes||'').toLowerCase().includes(q)||(p.tags||[]).some(t=>t.toLowerCase().includes(q));});
+  if(q)ids=ids.filter(id=>{const p=db.people[id];return(p.name||'').toLowerCase().includes(q)||(p.maidenName||'').toLowerCase().includes(q)||(p.role||'').toLowerCase().includes(q)||(p.vitals.birthPlace||'').toLowerCase().includes(q)||(p.notes||'').toLowerCase().includes(q)||(p.tags||[]).some(t=>t.toLowerCase().includes(q));});
   ids.sort((a,b)=>(db.people[a].name||'').localeCompare(db.people[b].name||''));
   if(!ids.length){list.innerHTML=`<p style="padding:20px;text-align:center;color:var(--ink3);font-size:14px">${q?'No results':'No people added yet'}</p>`;return;}
   list.innerHTML=ids.map(id=>{
     const p=db.people[id];const dead=isDead(p);
-    const sub=[p.role,p.vitals.birthDate?'b.'+p.vitals.birthDate:'',p.vitals.birthPlace].filter(Boolean).join(' · ');
+    const sub=[p.role,p.maidenName?'née '+p.maidenName:'',p.vitals.birthDate?'b.'+p.vitals.birthDate:'',p.vitals.birthPlace].filter(Boolean).join(' · ');
     return`<div class="idx-item" onclick="showView('ego');setEgo('${id}');openDetail('${id}')">
-      <div class="idx-av" style="background:${avCol(id)}">${initials(p.name)}</div>
+      <div class="idx-av"><img src="${p.profilePhoto||SILHOUETTE}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>
       <div class="idx-info"><div class="idx-name">${esc(p.name||'Unknown')}${dead?' †':''}</div>
       <div class="idx-sub">${esc(sub)||'No details'}</div></div>
       <span class="idx-badge ${dead?'badge-dead':'badge-alive'}">${dead?'Deceased':'Living'}</span>
@@ -1154,16 +1128,17 @@ function printPerson(id){
   const prtns=partners(id).map(pid=>db.people[pid]).filter(Boolean);
   const chldr=children(id).map(pid=>db.people[pid]).filter(Boolean);
   const sibs=siblings(id).map(pid=>db.people[pid]).filter(Boolean);
-
   function pline(pr){
     const bits=[];
     if(pr.role)bits.push(pr.role);
+    if(pr.maidenName)bits.push('née '+pr.maidenName);
     if(pr.vitals?.birthDate)bits.push('b. '+pr.vitals.birthDate);
     if(pr.vitals?.deathDate)bits.push('d. '+pr.vitals.deathDate);
     else if(isDead(pr))bits.push('deceased');
     return`<strong>${pr.name||'Unknown'}</strong>${bits.length?' — '+bits.join(', '):''}${isDead(pr)?' †':''}`;
   }
-
+  const photoHtml=p.profilePhoto
+    ?`<img src="${p.profilePhoto}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;float:right;margin:0 0 10pt 16pt;border:2pt solid #e0d5ba">`:'';
   const html=`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1175,23 +1150,25 @@ function printPerson(id){
   .sub{font-size:11pt;color:#8a6a50;margin-bottom:18pt}
   h2{font-size:13pt;color:#5a3e28;margin-top:16pt;margin-bottom:6pt;border-bottom:1pt solid #e0d5ba;padding-bottom:3pt}
   .field{margin:3pt 0;font-size:11pt}
-  .label{display:inline-block;width:110pt;color:#8a6a50;font-size:10pt;font-style:italic}
+  .label{display:inline-block;width:120pt;color:#8a6a50;font-size:10pt;font-style:italic}
   ul{margin:3pt 0;padding-left:18pt}
   li{font-size:11pt;margin-bottom:3pt}
   .note{background:#f5efe0;border-left:3pt solid #8a6a50;padding:6pt 10pt;margin:7pt 0;font-size:11pt}
   .note strong{display:block;margin-bottom:2pt}
-  .footer{margin-top:22pt;font-size:9pt;color:#aaa;border-top:1pt solid #eee;padding-top:5pt}
+  .footer{margin-top:22pt;font-size:9pt;color:#aaa;border-top:1pt solid #eee;padding-top:5pt;clear:both}
   @media print{@page{margin:15mm}body{margin:0}}
 </style>
 </head>
 <body>
+${photoHtml}
 <h1>${esc(p.name||'Unknown')}${isDead(p)?' †':''}</h1>
-<div class="sub">${[p.role,p.unknown?'Identity uncertain':null,p.dubious?'Information disputed':null].filter(Boolean).join(' · ')||'&nbsp;'}</div>
+<div class="sub">${[p.maidenName?'née '+p.maidenName:null,p.role,p.unknown?'Identity uncertain':null,p.dubious?'Information disputed':null].filter(Boolean).join(' · ')||'&nbsp;'}</div>
 
 <h2>Vital Records</h2>
 ${p.vitals.birthDate?`<div class="field"><span class="label">Born</span>${esc(p.vitals.birthDate)}${p.vitals.birthPlace?', '+esc(p.vitals.birthPlace):''}</div>`:''}
 ${p.vitals.deathDate?`<div class="field"><span class="label">Died</span>${esc(p.vitals.deathDate)}${p.vitals.deathPlace?', '+esc(p.vitals.deathPlace):''}</div>`:''}
 ${p.vitals.burialPlace?`<div class="field"><span class="label">Buried</span>${esc(p.vitals.burialPlace)}</div>`:''}
+${p.phone?`<div class="field"><span class="label">Phone</span>${esc(p.phone)}</div>`:''}
 ${(!p.vitals.birthDate&&!p.vitals.deathDate&&!p.vitals.burialPlace)?'<p style="font-size:11pt;color:#aaa">No vital records on file.</p>':''}
 ${p.notes?`<div class="note">${esc(p.notes)}</div>`:''}
 
@@ -1202,7 +1179,7 @@ ${sibs.length?`<h2>Siblings</h2><ul>${sibs.map(pr=>`<li>${pline(pr)}</li>`).join
 
 ${p.residences?.length?`<h2>Residences</h2><ul>${p.residences.map(r=>`<li>${esc(r.place||'?')}${r.from?' ('+esc(r.from)+(r.to?' – '+r.to:'')+')'  :''}${r.notes?' — '+esc(r.notes):''}</li>`).join('')}</ul>`:''}
 ${p.occupations?.length?`<h2>Occupations</h2><ul>${p.occupations.map(o=>`<li>${esc(o.job||'?')}${o.employer?' at '+esc(o.employer):''}${o.from?' ('+esc(o.from)+(o.to?' – '+o.to:'')+')'  :''}${o.place?', '+esc(o.place):''}</li>`).join('')}</ul>`:''}
-${p.marriages?.length?`<h2>Marriages / Unions</h2><ul>${p.marriages.map(m=>`<li>${esc(m.partnerName||'?')}${m.date?' — '+esc(m.date):''}${m.place?', '+esc(m.place):''}${m.status?' ('+esc(m.status)+')'  :''}${m.notes?'<br><em>'+esc(m.notes)+'</em>':''}</li>`).join('')}</ul>`:''}
+${p.marriages?.length?`<h2>Marriages / Unions</h2><ul>${p.marriages.map(m=>`<li>${esc(m.partnerName||'?')}${m.date?' — '+esc(m.date):''}${m.place?', '+esc(m.place):''}${m.status?' ('+esc(m.status)+')'  :''}${m.anniversary?' · Anniversary: '+esc(m.anniversary):''}${m.notes?'<br><em>'+esc(m.notes)+'</em>':''}</li>`).join('')}</ul>`:''}
 ${p.education?.length?`<h2>Education</h2><ul>${p.education.map(e=>`<li>${esc(e.school||'?')}${e.qualification?' — '+esc(e.qualification):''}${e.from?' ('+esc(e.from)+(e.to?' – '+e.to:'')+')'  :''}</li>`).join('')}</ul>`:''}
 ${p.anecdotes?.length?`<h2>Notes &amp; Stories</h2>${p.anecdotes.map(a=>`<div class="note"><strong>${esc(a.title||'Note')}${a.date?' <em>('+esc(a.date)+')</em>':''}</strong>${esc(a.text||'')}</div>`).join('')}`:''}
 ${p.tags?.length?`<h2>Tags</h2><p style="font-size:11pt">${p.tags.map(t=>esc(t)).join(' · ')}</p>`:''}
@@ -1211,7 +1188,6 @@ ${p.tags?.length?`<h2>Tags</h2><p style="font-size:11pt">${p.tags.map(t=>esc(t))
 <script>window.print();<\/script>
 </body>
 </html>`;
-
   const w=window.open('','_blank','width=820,height=960');
   if(w){w.document.write(html);w.document.close();}
 }
@@ -1220,7 +1196,7 @@ function printAll(){
   const ppl=Object.values(db.people).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   if(!ppl.length){alert('No people in the tree yet.');return;}
   const rows=ppl.map(p=>{
-    const sub=[p.role,p.vitals?.birthDate?'b.'+p.vitals.birthDate:'',p.vitals?.deathDate?'d.'+p.vitals.deathDate:''].filter(Boolean).join(' · ');
+    const sub=[p.role,p.maidenName?'née '+p.maidenName:'',p.vitals?.birthDate?'b.'+p.vitals.birthDate:'',p.vitals?.deathDate?'d.'+p.vitals.deathDate:''].filter(Boolean).join(' · ');
     return`<tr>
       <td style="padding:5pt 8pt;font-family:'Palatino Linotype',Georgia,serif;font-weight:bold">${esc(p.name||'Unknown')}${isDead(p)?' †':''}</td>
       <td style="padding:5pt 8pt;color:#8a6a50;font-size:10pt">${esc(sub)}</td>
@@ -1272,7 +1248,6 @@ initPanZoom();
 showView('ego');
 document.getElementById('index-view').style.display='none';
 document.getElementById('data-view').style.display='none';
-// Initial viewport centre (after first render)
 requestAnimationFrame(()=>resetVP());
 window.addEventListener('resize',()=>{if(curView==='ego'){renderEgo();resetVP();}});
 
