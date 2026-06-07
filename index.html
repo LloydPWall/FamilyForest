@@ -37,9 +37,30 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 
 /* ── EGO VIEW ── */
 #ego-view{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
-#ego-canvas-wrap{flex:1;position:relative;overflow:hidden;touch-action:none}
-#ego-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
-/* nodes are absolutely positioned inside ego-canvas-wrap */
+#ego-canvas-wrap{flex:1;position:relative;overflow:hidden;touch-action:none;cursor:grab}
+#ego-canvas-wrap:active{cursor:grabbing}
+
+/* The pan/zoom container — all nodes live here */
+#ego-canvas{
+  position:absolute;top:0;left:0;
+  width:3000px;height:3000px;
+  transform-origin:0 0;
+  will-change:transform;
+}
+#ego-svg{position:absolute;top:0;left:0;width:3000px;height:3000px;pointer-events:none}
+
+/* Zoom controls — outside the canvas so they stay put */
+.zoom-ctrl{
+  position:absolute;bottom:56px;right:14px;
+  display:flex;flex-direction:column;gap:5px;z-index:15;
+}
+.zoom-btn{
+  width:34px;height:34px;border-radius:8px;border:1px solid var(--parch3);
+  background:rgba(245,239,224,.92);color:var(--ink2);
+  font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 6px rgba(44,31,14,.15);
+}
+.zoom-btn:active{background:var(--parch3)}
 
 /* ── INDEX VIEW ── */
 #index-view{position:absolute;inset:0;display:none;flex-direction:column;background:var(--parch)}
@@ -90,6 +111,7 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 .enode-rel:hover{box-shadow:0 4px 16px rgba(44,31,14,.18)}
 .enode-rel.dead{background:#eae8e2;border-color:#ccc}
 .enode-rel.unknown{background:var(--parch3);border-style:dashed;opacity:.78}
+.enode-rel.sel{box-shadow:0 0 0 2px var(--accent)}
 
 /* expand stub — shown when a relation node has further connections */
 .enode-rel.expandable::after{
@@ -169,6 +191,11 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 .prow-sub{font-size:11px;color:var(--ink3)}
 .tag{display:inline-block;background:var(--parch3);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--ink2);margin:2px 3px 2px 0}
 .tag.dub{background:#ffeeba;color:#856404}
+
+/* ── PRINT ── */
+@media print{
+  #app,#overlay,#panel{display:none!important}
+}
 </style>
 </head>
 <body>
@@ -184,7 +211,16 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
     <!-- EGO / TREE VIEW -->
     <div id="ego-view">
       <div id="ego-canvas-wrap">
-        <svg id="ego-svg"></svg>
+        <!-- Pan/zoom canvas — all nodes live here -->
+        <div id="ego-canvas">
+          <svg id="ego-svg"></svg>
+        </div>
+        <!-- Zoom controls (fixed to wrap, not canvas) -->
+        <div class="zoom-ctrl">
+          <button class="zoom-btn" title="Zoom in" onclick="zoomBy(1.3)">+</button>
+          <button class="zoom-btn" title="Zoom out" onclick="zoomBy(0.77)">−</button>
+          <button class="zoom-btn" title="Reset view" onclick="resetVP()" style="font-size:14px">⊙</button>
+        </div>
       </div>
     </div>
 
@@ -200,6 +236,9 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
         <div class="sec">Export</div>
         <p style="font-size:13px;color:var(--ink2);margin-bottom:12px">Download all data as a JSON file for backup or transfer.</p>
         <button class="btn bp fw" onclick="exportData()">⬇ Export Family Tree (JSON)</button>
+        <div class="sec">Print</div>
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:8px">Print a formatted directory of all people in the tree.</p>
+        <button class="btn bs fw" onclick="printAll()">🖨 Print Full Directory</button>
         <div class="sec">Import</div>
         <p style="font-size:13px;color:var(--ink2);margin-bottom:8px">Load a previously exported file. <strong>Replaces all current data.</strong></p>
         <label class="btn bs fw" style="display:flex;justify-content:center;cursor:pointer">⬆ Import JSON File<input type="file" id="imp-file" accept=".json" onchange="importData(this)" style="display:none"></label>
@@ -236,7 +275,6 @@ function blank(name){
 
 function save(){try{localStorage.setItem('ft4_db',JSON.stringify(db))}catch(e){}}
 function load(){
-  // try latest key first, then migrate
   const keys=['ft4_db','ft3_db','ft2_db','familytree_db'];
   for(const k of keys){
     try{
@@ -279,15 +317,128 @@ function isLikelyDead(p){
 function isDead(p){return p.deceased||isLikelyDead(p)}
 
 // ════════════════════════════════════════════════════════════
+// PAN / ZOOM
+// ════════════════════════════════════════════════════════════
+const CANVAS_W=3000, CANVAS_H=3000;
+const CANVAS_CX=1500, CANVAS_CY=1400; // ego centre in canvas-space
+
+let vp={x:0,y:0,scale:1};
+
+function applyVP(){
+  const c=document.getElementById('ego-canvas');
+  if(c)c.style.transform=`translate(${vp.x}px,${vp.y}px) scale(${vp.scale})`;
+}
+
+function resetVP(){
+  const wrap=document.getElementById('ego-canvas-wrap');
+  if(!wrap)return;
+  const W=wrap.clientWidth||window.innerWidth;
+  const H=wrap.clientHeight||(window.innerHeight-46);
+  vp={x:W/2-CANVAS_CX,y:H/2-CANVAS_CY,scale:1};
+  applyVP();
+}
+
+function zoomBy(factor,cx,cy){
+  const wrap=document.getElementById('ego-canvas-wrap');
+  if(!wrap)return;
+  const W=wrap.clientWidth||window.innerWidth;
+  const H=wrap.clientHeight||(window.innerHeight-46);
+  cx=cx??W/2; cy=cy??H/2;
+  const newScale=Math.min(4,Math.max(0.18,vp.scale*factor));
+  vp.x=cx-(cx-vp.x)*(newScale/vp.scale);
+  vp.y=cy-(cy-vp.y)*(newScale/vp.scale);
+  vp.scale=newScale;
+  applyVP();
+}
+
+function initPanZoom(){
+  const wrap=document.getElementById('ego-canvas-wrap');
+  let t0=null,vp0=null,pinch0=null,moved=false,blockClick=false;
+
+  function pdist(touches){
+    const dx=touches[0].clientX-touches[1].clientX;
+    const dy=touches[0].clientY-touches[1].clientY;
+    return Math.sqrt(dx*dx+dy*dy);
+  }
+
+  wrap.addEventListener('touchstart',e=>{
+    moved=false;
+    vp0={...vp};
+    if(e.touches.length===1){
+      t0={x:e.touches[0].clientX,y:e.touches[0].clientY};
+      pinch0=null;
+    }else if(e.touches.length>=2){
+      const r=wrap.getBoundingClientRect();
+      const cx=(e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
+      const cy=(e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
+      pinch0={dist:pdist(e.touches),cx,cy,vp:{...vp}};
+      t0=null;
+    }
+  },{passive:true});
+
+  wrap.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(e.touches.length===1&&t0&&!pinch0){
+      const dx=e.touches[0].clientX-t0.x;
+      const dy=e.touches[0].clientY-t0.y;
+      if(Math.abs(dx)>5||Math.abs(dy)>5)moved=true;
+      if(moved){vp.x=vp0.x+dx;vp.y=vp0.y+dy;applyVP();}
+    }else if(e.touches.length>=2&&pinch0){
+      moved=true;
+      const dist=pdist(e.touches);
+      const factor=dist/pinch0.dist;
+      const newScale=Math.min(4,Math.max(0.18,pinch0.vp.scale*factor));
+      const {cx,cy}=pinch0;
+      vp.scale=newScale;
+      vp.x=cx-(cx-pinch0.vp.x)*(newScale/pinch0.vp.scale);
+      vp.y=cy-(cy-pinch0.vp.y)*(newScale/pinch0.vp.scale);
+      applyVP();
+    }
+  },{passive:false});
+
+  wrap.addEventListener('touchend',e=>{
+    if(moved){blockClick=true;setTimeout(()=>{blockClick=false;},350);}
+    if(e.touches.length<2)pinch0=null;
+    if(e.touches.length===0)t0=null;
+  });
+
+  // Suppress synthetic click after a drag
+  wrap.addEventListener('click',e=>{
+    if(blockClick){e.stopPropagation();e.preventDefault();blockClick=false;}
+  },true);
+
+  // Mouse drag (drag from background, not from nodes/buttons)
+  let mDown=false,m0={},mvp0={};
+  wrap.addEventListener('mousedown',e=>{
+    if(e.button!==0)return;
+    if(e.target.closest('.enode,.eadd,.zoom-ctrl,.elegend'))return;
+    mDown=true;moved=false;
+    m0={x:e.clientX,y:e.clientY};mvp0={...vp};
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!mDown)return;
+    const dx=e.clientX-m0.x,dy=e.clientY-m0.y;
+    if(Math.abs(dx)>3||Math.abs(dy)>3)moved=true;
+    if(moved){vp.x=mvp0.x+dx;vp.y=mvp0.y+dy;applyVP();}
+  });
+  document.addEventListener('mouseup',()=>{mDown=false;});
+
+  // Mouse wheel zoom
+  wrap.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const r=wrap.getBoundingClientRect();
+    zoomBy(e.deltaY>0?0.88:1.136,e.clientX-r.left,e.clientY-r.top);
+  },{passive:false});
+}
+
+// ════════════════════════════════════════════════════════════
 // EGO VIEW — centred graph
 // ════════════════════════════════════════════════════════════
-let egoId=null; // current centre person
+let egoId=null;
 
-// Find the "me" person or first person
 function findDefault(){
   const ids=Object.keys(db.people);
   if(!ids.length)return null;
-  // prefer role containing "me" or "myself"
   const me=ids.find(id=>/^me$/i.test((db.people[id].role||'').trim()));
   return me||ids[0];
 }
@@ -296,10 +447,10 @@ function setEgo(id){
   egoId=id;
   dismissQuickBar();
   renderEgo();
+  resetVP(); // re-centre the view on new ego
   const p=db.people[id];
   document.getElementById('topbar-title').textContent=
     p?(p.name||'Unknown')+' · Family Tree':'🌳 Family Tree';
-  // show "back to me" button if not on the default person
   const defaultId=findDefault();
   const homeBtn=document.getElementById('btn-home');
   if(id!==defaultId&&defaultId){
@@ -311,199 +462,179 @@ function setEgo(id){
       b.onclick=()=>setEgo(defaultId);
       document.getElementById('topbar').insertBefore(b,document.getElementById('btn-ego'));
     }
-  } else {
+  }else{
     if(homeBtn)homeBtn.remove();
     document.getElementById('topbar-title').textContent='🌳 Family Tree';
   }
 }
 
 // ── LAYOUT CONSTANTS ──────────────────────────────────────
-const EW=168,EH=92;    // ego node
-const RW=150,RH=78;    // relation node
-const COL_GAP=18;      // gap between nodes in a column
-const ROW_GAP=18;      // gap between nodes in a row
-const V_DIST=110;      // vertical distance ego ↔ parent/child rows
-const H_DIST=90;       // horizontal distance ego ↔ partner/sibling columns
+const EW=168,EH=92;
+const RW=150,RH=78;
+const COL_GAP=18;
+const ROW_GAP=18;
+const V_DIST=110;
+const H_DIST=90;
 
 function renderEgo(){
   const wrap=document.getElementById('ego-canvas-wrap');
+  const canvas=document.getElementById('ego-canvas');
   const svg=document.getElementById('ego-svg');
-  wrap.querySelectorAll('.enode,.elabel,.eadd,.elegend').forEach(el=>el.remove());
+
+  // Clear previous content
+  canvas.querySelectorAll('.enode,.elabel,.eadd').forEach(el=>el.remove());
+  wrap.querySelectorAll('.elegend').forEach(el=>el.remove());
   svg.innerHTML='';
 
   const ids=Object.keys(db.people);
   if(!ids.length){
-    // empty state
-    if(!wrap.querySelector('.empty-state')){
+    if(!canvas.querySelector('.empty-state')){
       const d=document.createElement('div');
       d.className='empty-state';
-      d.style.cssText='position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none';
+      d.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;white-space:nowrap';
       d.innerHTML=`<h2 style="font-family:var(--serif);font-size:22px;color:var(--ink2);margin-bottom:10px">Your Family Tree</h2>
-        <p style="font-size:14px;color:var(--ink3);max-width:240px;line-height:1.6">Add your first person to get started.</p>
+        <p style="font-size:14px;color:var(--ink3);max-width:240px;line-height:1.6;white-space:normal">Add your first person to get started.</p>
         <button style="pointer-events:all;margin-top:18px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:16px;font-family:var(--serif);cursor:pointer" onclick="addPersonFlow(null,null)">+ Add First Person</button>`;
-      wrap.appendChild(d);
+      canvas.appendChild(d);
     }
     return;
   }
-  wrap.querySelector('.empty-state')?.remove();
+  canvas.querySelector('.empty-state')?.remove();
 
-  if(!egoId||!db.people[egoId]) egoId=findDefault();
-  if(!egoId) return;
+  if(!egoId||!db.people[egoId])egoId=findDefault();
+  if(!egoId)return;
 
-  const W=wrap.clientWidth||window.innerWidth;
-  const H=wrap.clientHeight||(window.innerHeight-46);
+  // Use fixed canvas-space centre for ego node
+  const ecx=CANVAS_CX;
+  const ecy=CANVAS_CY;
+  const ex=ecx-EW/2;
+  const ey=ecy-EH/2;
 
-  // ── Gather relations ──────────────────────────────────────
   const ego=db.people[egoId];
-  const myParents  = parents(egoId);
-  const myChildren = children(egoId);
-  const myPartners = partners(egoId);
-  const mySiblings = siblings(egoId);
-
-  // ── Decide ego node centre ────────────────────────────────
-  // Bias slightly left+up if we have partners (right) and children (below)
-  // Keep it roughly centred
-  const ecx = W/2;   // ego centre X
-  const ecy = H/2;   // ego centre Y
-  const ex  = ecx - EW/2;
-  const ey  = ecy - EH/2;
+  const myParents  =parents(egoId);
+  const myChildren =children(egoId);
+  const myPartners =partners(egoId);
+  const mySiblings =siblings(egoId);
 
   const edges=[];
 
-  // ── PARENTS — row above ───────────────────────────────────
-  const parentRowY = ey - V_DIST - RH;
+  // ── PARENTS ──────────────────────────────────────────────
+  const parentRowY=ey-V_DIST-RH;
   if(myParents.length){
-    const pos = spreadH(myParents.length, RW, ROW_GAP, ecx);
+    const pos=spreadH(myParents.length,RW,ROW_GAP,ecx);
     myParents.forEach((pid,i)=>{
-      const nx=pos[i], ny=parentRowY;
-      makeNode(wrap,pid,nx,ny,'rel','up');
+      const nx=pos[i],ny=parentRowY;
+      makeNode(canvas,pid,nx,ny,'rel','up');
       const lk=linkBetween(pid,egoId);
       edges.push({x1:ecx,y1:ey,x2:nx+RW/2,y2:ny+RH,rel:'parent',dubious:lk?.dubious});
     });
-    makeLabel(wrap,ecx, parentRowY-20, 'Parents');
-    // add-parent button at end of row
-    const lastX = spreadH(myParents.length,RW,ROW_GAP,ecx)[myParents.length-1]+RW+12;
-    makeAdd(wrap, lastX, parentRowY+RH/2-15, ()=>addPersonFlow(egoId,'parent'));
-  } else {
-    makeLabel(wrap, ecx, parentRowY-20, 'Parents');
-    makeAdd(wrap, ecx-15, parentRowY+RH/2-15, ()=>addPersonFlow(egoId,'parent'));
+    makeLabel(canvas,ecx,parentRowY-20,'Parents');
+    const lastX=spreadH(myParents.length,RW,ROW_GAP,ecx)[myParents.length-1]+RW+12;
+    makeAdd(canvas,lastX,parentRowY+RH/2-15,()=>addPersonFlow(egoId,'parent'));
+  }else{
+    makeLabel(canvas,ecx,parentRowY-20,'Parents');
+    makeAdd(canvas,ecx-15,parentRowY+RH/2-15,()=>addPersonFlow(egoId,'parent'));
   }
 
-  // ── PARTNERS — column right ───────────────────────────────
-  const partnerColX = ex + EW + H_DIST;
+  // ── PARTNERS ─────────────────────────────────────────────
+  const partnerColX=ex+EW+H_DIST;
   if(myPartners.length){
-    const pos = spreadV(myPartners.length, RH, COL_GAP, ecy);
+    const pos=spreadV(myPartners.length,RH,COL_GAP,ecy);
     myPartners.forEach((pid,i)=>{
-      const nx=partnerColX, ny=pos[i];
-      makeNode(wrap,pid,nx,ny,'rel','right');
+      const nx=partnerColX,ny=pos[i];
+      makeNode(canvas,pid,nx,ny,'rel','right');
       const lk=linkBetween(pid,egoId);
       edges.push({x1:ex+EW,y1:ecy,x2:nx,y2:ny+RH/2,rel:'partner',dubious:lk?.dubious});
     });
-    makeLabel(wrap, partnerColX+RW/2, pos[0]-20, 'Partners / Spouses');
-    const lastY = spreadV(myPartners.length,RH,COL_GAP,ecy)[myPartners.length-1]+RH+10;
-    makeAdd(wrap, partnerColX+RW/2-15, lastY, ()=>addPersonFlow(egoId,'partner'));
-  } else {
-    makeLabel(wrap, partnerColX+RW/2, ecy-RH/2-20, 'Partners');
-    makeAdd(wrap, partnerColX+RW/2-15, ecy-15, ()=>addPersonFlow(egoId,'partner'));
+    makeLabel(canvas,partnerColX+RW/2,pos[0]-20,'Partners / Spouses');
+    const lastY=spreadV(myPartners.length,RH,COL_GAP,ecy)[myPartners.length-1]+RH+10;
+    makeAdd(canvas,partnerColX+RW/2-15,lastY,()=>addPersonFlow(egoId,'partner'));
+  }else{
+    makeLabel(canvas,partnerColX+RW/2,ecy-RH/2-20,'Partners');
+    makeAdd(canvas,partnerColX+RW/2-15,ecy-15,()=>addPersonFlow(egoId,'partner'));
   }
 
-  // ── CHILDREN — row below ──────────────────────────────────
-  const childRowY = ey + EH + V_DIST;
+  // ── CHILDREN ─────────────────────────────────────────────
+  const childRowY=ey+EH+V_DIST;
   if(myChildren.length){
-    const pos = spreadH(myChildren.length, RW, ROW_GAP, ecx);
+    const pos=spreadH(myChildren.length,RW,ROW_GAP,ecx);
     myChildren.forEach((cid,i)=>{
-      const nx=pos[i], ny=childRowY;
-      makeNode(wrap,cid,nx,ny,'rel','down');
+      const nx=pos[i],ny=childRowY;
+      makeNode(canvas,cid,nx,ny,'rel','down');
       const lk=linkBetween(egoId,cid);
       edges.push({x1:ecx,y1:ey+EH,x2:nx+RW/2,y2:ny,rel:'child',dubious:lk?.dubious});
     });
-    makeLabel(wrap, ecx, childRowY+RH+8, 'Children');
-    const lastX = spreadH(myChildren.length,RW,ROW_GAP,ecx)[myChildren.length-1]+RW+12;
-    makeAdd(wrap, lastX, childRowY+RH/2-15, ()=>addPersonFlow(egoId,'child'));
-  } else {
-    makeLabel(wrap, ecx, childRowY+RH+8, 'Children');
-    makeAdd(wrap, ecx-15, childRowY+RH/2-15, ()=>addPersonFlow(egoId,'child'));
+    makeLabel(canvas,ecx,childRowY+RH+8,'Children');
+    const lastX=spreadH(myChildren.length,RW,ROW_GAP,ecx)[myChildren.length-1]+RW+12;
+    makeAdd(canvas,lastX,childRowY+RH/2-15,()=>addPersonFlow(egoId,'child'));
+  }else{
+    makeLabel(canvas,ecx,childRowY+RH+8,'Children');
+    makeAdd(canvas,ecx-15,childRowY+RH/2-15,()=>addPersonFlow(egoId,'child'));
   }
 
-  // ── SIBLINGS — column left ────────────────────────────────
-  const sibColX = ex - H_DIST - RW;
+  // ── SIBLINGS ─────────────────────────────────────────────
+  const sibColX=ex-H_DIST-RW;
   if(mySiblings.length){
-    const pos = spreadV(mySiblings.length, RH, COL_GAP, ecy);
+    const pos=spreadV(mySiblings.length,RH,COL_GAP,ecy);
     mySiblings.forEach((sid,i)=>{
-      const nx=sibColX, ny=pos[i];
-      makeNode(wrap,sid,nx,ny,'rel','left');
-      // sibling line goes to shared-parent midpoint visually — just draw lateral
+      const nx=sibColX,ny=pos[i];
+      makeNode(canvas,sid,nx,ny,'rel','left');
       edges.push({x1:ex,y1:ecy,x2:nx+RW,y2:ny+RH/2,rel:'sibling',dubious:false});
     });
-    makeLabel(wrap, sibColX+RW/2, pos[0]-20, 'Siblings');
-    const lastY = spreadV(mySiblings.length,RH,COL_GAP,ecy)[mySiblings.length-1]+RH+10;
-    makeAdd(wrap, sibColX+RW/2-15, lastY, ()=>addPersonFlow(egoId,'sibling'));
-  } else {
-    makeLabel(wrap, sibColX+RW/2, ecy-RH/2-20, 'Siblings');
-    makeAdd(wrap, sibColX+RW/2-15, ecy-15, ()=>addPersonFlow(egoId,'sibling'));
+    makeLabel(canvas,sibColX+RW/2,pos[0]-20,'Siblings');
+    const lastY=spreadV(mySiblings.length,RH,COL_GAP,ecy)[mySiblings.length-1]+RH+10;
+    makeAdd(canvas,sibColX+RW/2-15,lastY,()=>addPersonFlow(egoId,'sibling'));
+  }else{
+    makeLabel(canvas,sibColX+RW/2,ecy-RH/2-20,'Siblings');
+    makeAdd(canvas,sibColX+RW/2-15,ecy-15,()=>addPersonFlow(egoId,'sibling'));
   }
 
-  // ── Ego node (drawn last so it's on top) ──────────────────
-  makeNode(wrap,egoId,ex,ey,'ego');
+  // ── Ego node (drawn last so it's on top) ─────────────────
+  makeNode(canvas,egoId,ex,ey,'ego');
 
   // ── Draw edges ────────────────────────────────────────────
-  svg.setAttribute('width',W); svg.setAttribute('height',H);
   let svgH='';
   edges.forEach(e=>{
-    // Colour and style encode ONLY the relationship type.
-    // Dubious adds a secondary dash pattern on top.
-    let stroke,sw,dash;
+    let stroke,sw,dash='';
     if(e.rel==='parent'||e.rel==='child'){
-      stroke='#5a3e28'; sw=2; dash='none';
-    } else if(e.rel==='partner'){
-      stroke='#8b3a2a'; sw=1.5; dash='8,5';
-    } else { // sibling
-      stroke='#8a6a50'; sw=1.5; dash='3,5';
+      stroke='#5a3e28';sw=2;
+    }else if(e.rel==='partner'){
+      stroke='#8b3a2a';sw=1.5;dash='8,5';
+    }else{
+      stroke='#8a6a50';sw=1.5;dash='3,5';
     }
-    if(e.dubious){
-      // overlay a gold dash on uncertain links
-      stroke='#b8860b'; dash='5,4';
-    }
-    const mx=(e.x1+e.x2)/2, my=(e.y1+e.y2)/2;
+    if(e.dubious){stroke='#b8860b';dash='5,4';}
+    const mx=(e.x1+e.x2)/2,my=(e.y1+e.y2)/2;
+    const dashAttr=dash?`stroke-dasharray="${dash}"`:'';
     svgH+=`<path d="M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}" `+
-      `stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-dasharray="${dash}" opacity=".85"/>`;
+      `stroke="${stroke}" stroke-width="${sw}" fill="none" ${dashAttr} opacity=".85"/>`;
   });
   svg.innerHTML=svgH;
 
-  // ── Legend ────────────────────────────────────────────────
+  // ── Legend (fixed to wrap, not canvas) ───────────────────
   const leg=document.createElement('div');
   leg.className='elegend';
-  leg.style.cssText='position:absolute;bottom:12px;right:14px;background:rgba(245,239,224,.92);border:1px solid rgba(44,31,14,.12);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--ink2);pointer-events:none;line-height:1.8';
+  leg.style.cssText='position:absolute;bottom:12px;right:14px;background:rgba(245,239,224,.94);border:1px solid rgba(44,31,14,.12);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--ink2);pointer-events:none;line-height:1.8;z-index:10';
   leg.innerHTML=
     `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#5a3e28" stroke-width="2"/></svg>Parent / Child</div>`+
     `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#8b3a2a" stroke-width="1.5" stroke-dasharray="8,5"/></svg>Partner / Spouse</div>`+
     `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#8a6a50" stroke-width="1.5" stroke-dasharray="3,5"/></svg>Sibling</div>`+
     `<div style="display:flex;align-items:center;gap:7px"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#b8860b" stroke-width="1.5" stroke-dasharray="5,4"/></svg>Uncertain</div>`+
-    `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(44,31,14,.1);font-size:10px;color:var(--ink3)">Tap a person to act · tap again to re-centre</div>`;
+    `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(44,31,14,.1);font-size:10px;color:var(--ink3)">Tap a node · drag to pan · pinch to zoom</div>`;
   wrap.appendChild(leg);
 }
 
-// ── Spread N items horizontally, centred on anchorX ────────
-// Returns array of left-edge X values
-function spreadH(n, w, gap, anchorX){
-  const total = n*w + (n-1)*gap;
-  let x = anchorX - total/2;
-  const out=[];
-  for(let i=0;i<n;i++){ out.push(x); x+=w+gap; }
-  return out;
+function spreadH(n,w,gap,anchorX){
+  const total=n*w+(n-1)*gap;let x=anchorX-total/2;
+  const out=[];for(let i=0;i<n;i++){out.push(x);x+=w+gap;}return out;
 }
-// Returns array of top-edge Y values
-function spreadV(n, h, gap, anchorY){
-  const total = n*h + (n-1)*gap;
-  let y = anchorY - total/2;
-  const out=[];
-  for(let i=0;i<n;i++){ out.push(y); y+=h+gap; }
-  return out;
+function spreadV(n,h,gap,anchorY){
+  const total=n*h+(n-1)*gap;let y=anchorY-total/2;
+  const out=[];for(let i=0;i<n;i++){out.push(y);y+=h+gap;}return out;
 }
 
-
-// ── Create a node element ──────────────────────────────────
-function makeNode(wrap,id,x,y,kind,dir){
+// ── Create a node element ─────────────────────────────────
+function makeNode(container,id,x,y,kind,dir){
   const p=db.people[id];if(!p)return;
   const dead=isDead(p);
   const el=document.createElement('div');
@@ -516,7 +647,6 @@ function makeNode(wrap,id,x,y,kind,dir){
   el.style.cssText=`left:${x}px;top:${y}px;width:${kind==='ego'?EW:RW}px;min-height:${kind==='ego'?EH:RH}px`;
   if(dir)el.setAttribute('data-dir',dir);
 
-  // expandable dot — if this relation has their own further relations
   if(kind!=='ego'){
     const hasMore=parents(id).length||children(id).length||partners(id).length;
     if(hasMore)el.classList.add('expandable');
@@ -530,27 +660,26 @@ function makeNode(wrap,id,x,y,kind,dir){
   el.addEventListener('click',()=>{
     if(kind==='ego'){
       openDetail(id);
-    } else {
-      // first tap: select/highlight. Second tap (or long-press): centre on this person
+    }else{
       if(el.classList.contains('sel')){
-        setEgo(id); // navigate to this person
-      } else {
-        wrap.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
+        setEgo(id);
+      }else{
+        document.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
         el.classList.add('sel');
-        // show quick-action bar
         showQuickBar(id,el);
       }
     }
   });
 
-  wrap.appendChild(el);
+  container.appendChild(el);
 }
 
-// ── Quick action bar when a relation node is tapped ────────
+// ── Quick action bar ──────────────────────────────────────
 let quickBarEl=null;
 function showQuickBar(id,nodeEl){
   if(quickBarEl)quickBarEl.remove();
   const p=db.people[id];
+  const lk=linkBetween(id,egoId);
   const bar=document.createElement('div');
   bar.id='quick-bar';
   bar.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--ink);color:var(--parch);display:flex;align-items:stretch;z-index:150;border-top:2px solid var(--accent)';
@@ -561,9 +690,16 @@ function showQuickBar(id,nodeEl){
     <button onclick="openDetail('${id}')" style="flex:1;padding:12px 6px;background:none;border:none;color:var(--parch);font-family:var(--serif);font-size:13px;cursor:pointer;border-right:1px solid rgba(255,255,255,.15)">
       ✏️ Edit<br><span style="font-size:10px;opacity:.7">details & records</span>
     </button>
+    ${lk?`<button onclick="qbToggleDub('${lk.id}')" style="flex:1;padding:12px 6px;background:none;border:none;cursor:pointer;font-family:var(--serif);font-size:13px;border-right:1px solid rgba(255,255,255,.15);color:${lk.dubious?'#f0c040':'rgba(245,239,224,.6)'}">
+      ${lk.dubious?'⚑ Uncertain':'⚐ Certain'}<br><span style="font-size:10px;opacity:.7">tap to toggle</span>
+    </button>`:''}
     <button onclick="dismissQuickBar()" style="width:44px;background:none;border:none;color:rgba(255,255,255,.6);font-size:20px;cursor:pointer">✕</button>`;
   document.body.appendChild(bar);
   quickBarEl=bar;
+}
+function qbToggleDub(linkId){
+  const l=db.links.find(l=>l.id===linkId);
+  if(l){l.dubious=!l.dubious;save();renderEgo();dismissQuickBar();}
 }
 function dismissQuickBar(){
   if(quickBarEl)quickBarEl.remove();
@@ -571,23 +707,23 @@ function dismissQuickBar(){
   document.querySelectorAll('.enode.sel').forEach(n=>n.classList.remove('sel'));
 }
 
-// ── Label ──────────────────────────────────────────────────
-function makeLabel(wrap,cx,y,text){
+// ── Label ─────────────────────────────────────────────────
+function makeLabel(container,cx,y,text){
   const el=document.createElement('div');
   el.className='elabel';
   el.textContent=text;
   el.style.cssText=`left:${cx}px;top:${y}px;transform:translateX(-50%)`;
-  wrap.appendChild(el);
+  container.appendChild(el);
 }
 
-// ── Add button ─────────────────────────────────────────────
-function makeAdd(wrap,x,y,cb){
+// ── Add button ────────────────────────────────────────────
+function makeAdd(container,x,y,cb){
   const el=document.createElement('button');
   el.className='eadd';
   el.textContent='+';
   el.style.cssText=`left:${x}px;top:${y}px`;
   el.addEventListener('click',cb);
-  wrap.appendChild(el);
+  container.appendChild(el);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -671,18 +807,17 @@ function doAddPerson(relId,relType){
       if(pars.length){
         pars.forEach(pid=>db.links.push({id:lid(),type:'par',from:pid,to:p.id,dubious:dub}));
       }else{
-        const sp=blank('');sp.unknown=true;sp.role='unknown parent';
+        // Auto-create a shared unknown parent — use dub from the user's checkbox, not forced true
+        const sp=blank('');sp.unknown=true;sp.role='Unknown parent';
         db.people[sp.id]=sp;
-        db.links.push({id:lid(),type:'par',from:sp.id,to:relId,dubious:true});
-        db.links.push({id:lid(),type:'par',from:sp.id,to:p.id,dubious:true});
+        db.links.push({id:lid(),type:'par',from:sp.id,to:relId,dubious:dub});
+        db.links.push({id:lid(),type:'par',from:sp.id,to:p.id,dubious:dub});
       }
     }
   }
-  // If this is the first person, make them the ego
   if(Object.keys(db.people).length===1)egoId=p.id;
 
   save();panelClose();renderEgo();
-  // open their detail immediately
   curId=p.id;curTab='vitals';
   panelOpen(p.name||'Unknown Person',buildDetailBody());
 }
@@ -715,7 +850,7 @@ function bVitals(p){
     <div class="f"><label>Full Name</label><input type="text" value="${esc(p.name)}" oninput="up('name',this.value)"></div>
     <div class="f"><label>Role / Label</label><input type="text" value="${esc(p.role)}" oninput="up('role',this.value)" placeholder="e.g. maternal grandfather"></div>
     <div class="chk"><input type="checkbox" id="v-unk" ${p.unknown?'checked':''} onchange="up('unknown',this.checked)"><label for="v-unk">Unknown / placeholder person</label></div>
-    <div class="chk"><input type="checkbox" id="v-dub" ${p.dubious?'checked':''} onchange="up('dubious',this.checked)"><label for="v-dub">Relationship uncertain / disputed</label></div>
+    <div class="chk"><input type="checkbox" id="v-dub" ${p.dubious?'checked':''} onchange="up('dubious',this.checked)"><label for="v-dub">Identity uncertain / disputed</label></div>
     <div class="chk"><input type="checkbox" id="v-dead" ${dead?'checked':''} onchange="setDead(this.checked)">
       <label for="v-dead">Deceased${isLikelyDead(p)&&!p.deceased?' <span style="font-size:11px;color:var(--ink3)">(auto-detected)</span>':''}</label></div>
     <div class="sec">Birth</div>
@@ -735,6 +870,7 @@ function bVitals(p){
     </div>
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--parch3);display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn bk" onclick="panelClose();setEgo('${p.id}')">👁 View from here</button>
+      <button class="btn bs" onclick="printPerson('${p.id}')">🖨 Print Record</button>
       <button class="btn bd" onclick="delPerson()">Delete</button>
     </div>`;
 }
@@ -962,9 +1098,9 @@ function doLink(id,relType,targetId){
     if(pars.length){
       pars.forEach(pid=>{if(!db.links.find(l=>l.type==='par'&&l.from===pid&&l.to===targetId))db.links.push({id:lid(),type:'par',from:pid,to:targetId,dubious:dub});});
     }else{
-      const sp=blank('');sp.unknown=true;sp.role='unknown parent';db.people[sp.id]=sp;
-      db.links.push({id:lid(),type:'par',from:sp.id,to:id,dubious:true});
-      db.links.push({id:lid(),type:'par',from:sp.id,to:targetId,dubious:true});
+      const sp=blank('');sp.unknown=true;sp.role='Unknown parent';db.people[sp.id]=sp;
+      db.links.push({id:lid(),type:'par',from:sp.id,to:id,dubious:dub});
+      db.links.push({id:lid(),type:'par',from:sp.id,to:targetId,dubious:dub});
     }
   }else if(relType==='parent') db.links.push({id:lid(),type:'par',from:targetId,to:id,dubious:dub});
   else if(relType==='child')   db.links.push({id:lid(),type:'par',from:id,to:targetId,dubious:dub});
@@ -1006,8 +1142,120 @@ function renderStats(){
   el.innerHTML=`${ppl.length} people · ${living} living · ${ppl.length-living} deceased · ${db.links.length} relationships`;
 }
 function exportData(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='family-tree-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(u);}
-function importData(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d.people){db=d;db.links=db.links||[];db.nextId=db.nextId||1;save();egoId=findDefault();renderEgo();renderStats();alert('Imported.');}else alert('Invalid file.');}catch{alert('Could not read file.');}};r.readAsText(f);}
+function importData(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d.people){db=d;db.links=db.links||[];db.nextId=db.nextId||1;save();egoId=findDefault();renderEgo();resetVP();renderStats();alert('Imported.');}else alert('Invalid file.');}catch{alert('Could not read file.');}};r.readAsText(f);}
 function clearAll(){if(!confirm('Delete everything?'))return;db={people:{},links:[],nextId:1};save();egoId=null;renderEgo();renderStats();}
+
+// ════════════════════════════════════════════════════════════
+// PRINT
+// ════════════════════════════════════════════════════════════
+function printPerson(id){
+  const p=db.people[id];if(!p)return;
+  const pars=parents(id).map(pid=>db.people[pid]).filter(Boolean);
+  const prtns=partners(id).map(pid=>db.people[pid]).filter(Boolean);
+  const chldr=children(id).map(pid=>db.people[pid]).filter(Boolean);
+  const sibs=siblings(id).map(pid=>db.people[pid]).filter(Boolean);
+
+  function pline(pr){
+    const bits=[];
+    if(pr.role)bits.push(pr.role);
+    if(pr.vitals?.birthDate)bits.push('b. '+pr.vitals.birthDate);
+    if(pr.vitals?.deathDate)bits.push('d. '+pr.vitals.deathDate);
+    else if(isDead(pr))bits.push('deceased');
+    return`<strong>${pr.name||'Unknown'}</strong>${bits.length?' — '+bits.join(', '):''}${isDead(pr)?' †':''}`;
+  }
+
+  const html=`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Family Record: ${esc(p.name||'Unknown')}</title>
+<style>
+  body{font-family:'Palatino Linotype',Georgia,serif;color:#2c1f0e;margin:2cm;line-height:1.65;max-width:680px}
+  h1{font-size:26pt;border-bottom:2pt solid #5a3e28;padding-bottom:5pt;margin-bottom:3pt}
+  .sub{font-size:11pt;color:#8a6a50;margin-bottom:18pt}
+  h2{font-size:13pt;color:#5a3e28;margin-top:16pt;margin-bottom:6pt;border-bottom:1pt solid #e0d5ba;padding-bottom:3pt}
+  .field{margin:3pt 0;font-size:11pt}
+  .label{display:inline-block;width:110pt;color:#8a6a50;font-size:10pt;font-style:italic}
+  ul{margin:3pt 0;padding-left:18pt}
+  li{font-size:11pt;margin-bottom:3pt}
+  .note{background:#f5efe0;border-left:3pt solid #8a6a50;padding:6pt 10pt;margin:7pt 0;font-size:11pt}
+  .note strong{display:block;margin-bottom:2pt}
+  .footer{margin-top:22pt;font-size:9pt;color:#aaa;border-top:1pt solid #eee;padding-top:5pt}
+  @media print{@page{margin:15mm}body{margin:0}}
+</style>
+</head>
+<body>
+<h1>${esc(p.name||'Unknown')}${isDead(p)?' †':''}</h1>
+<div class="sub">${[p.role,p.unknown?'Identity uncertain':null,p.dubious?'Information disputed':null].filter(Boolean).join(' · ')||'&nbsp;'}</div>
+
+<h2>Vital Records</h2>
+${p.vitals.birthDate?`<div class="field"><span class="label">Born</span>${esc(p.vitals.birthDate)}${p.vitals.birthPlace?', '+esc(p.vitals.birthPlace):''}</div>`:''}
+${p.vitals.deathDate?`<div class="field"><span class="label">Died</span>${esc(p.vitals.deathDate)}${p.vitals.deathPlace?', '+esc(p.vitals.deathPlace):''}</div>`:''}
+${p.vitals.burialPlace?`<div class="field"><span class="label">Buried</span>${esc(p.vitals.burialPlace)}</div>`:''}
+${(!p.vitals.birthDate&&!p.vitals.deathDate&&!p.vitals.burialPlace)?'<p style="font-size:11pt;color:#aaa">No vital records on file.</p>':''}
+${p.notes?`<div class="note">${esc(p.notes)}</div>`:''}
+
+${pars.length?`<h2>Parents</h2><ul>${pars.map(pr=>`<li>${pline(pr)}</li>`).join('')}</ul>`:''}
+${prtns.length?`<h2>Partners / Spouses</h2><ul>${prtns.map(pr=>`<li>${pline(pr)}</li>`).join('')}</ul>`:''}
+${chldr.length?`<h2>Children</h2><ul>${chldr.map(pr=>`<li>${pline(pr)}</li>`).join('')}</ul>`:''}
+${sibs.length?`<h2>Siblings</h2><ul>${sibs.map(pr=>`<li>${pline(pr)}</li>`).join('')}</ul>`:''}
+
+${p.residences?.length?`<h2>Residences</h2><ul>${p.residences.map(r=>`<li>${esc(r.place||'?')}${r.from?' ('+esc(r.from)+(r.to?' – '+r.to:'')+')'  :''}${r.notes?' — '+esc(r.notes):''}</li>`).join('')}</ul>`:''}
+${p.occupations?.length?`<h2>Occupations</h2><ul>${p.occupations.map(o=>`<li>${esc(o.job||'?')}${o.employer?' at '+esc(o.employer):''}${o.from?' ('+esc(o.from)+(o.to?' – '+o.to:'')+')'  :''}${o.place?', '+esc(o.place):''}</li>`).join('')}</ul>`:''}
+${p.marriages?.length?`<h2>Marriages / Unions</h2><ul>${p.marriages.map(m=>`<li>${esc(m.partnerName||'?')}${m.date?' — '+esc(m.date):''}${m.place?', '+esc(m.place):''}${m.status?' ('+esc(m.status)+')'  :''}${m.notes?'<br><em>'+esc(m.notes)+'</em>':''}</li>`).join('')}</ul>`:''}
+${p.education?.length?`<h2>Education</h2><ul>${p.education.map(e=>`<li>${esc(e.school||'?')}${e.qualification?' — '+esc(e.qualification):''}${e.from?' ('+esc(e.from)+(e.to?' – '+e.to:'')+')'  :''}</li>`).join('')}</ul>`:''}
+${p.anecdotes?.length?`<h2>Notes &amp; Stories</h2>${p.anecdotes.map(a=>`<div class="note"><strong>${esc(a.title||'Note')}${a.date?' <em>('+esc(a.date)+')</em>':''}</strong>${esc(a.text||'')}</div>`).join('')}`:''}
+${p.tags?.length?`<h2>Tags</h2><p style="font-size:11pt">${p.tags.map(t=>esc(t)).join(' · ')}</p>`:''}
+
+<div class="footer">Family Forest · Printed ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
+<script>window.print();<\/script>
+</body>
+</html>`;
+
+  const w=window.open('','_blank','width=820,height=960');
+  if(w){w.document.write(html);w.document.close();}
+}
+
+function printAll(){
+  const ppl=Object.values(db.people).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!ppl.length){alert('No people in the tree yet.');return;}
+  const rows=ppl.map(p=>{
+    const sub=[p.role,p.vitals?.birthDate?'b.'+p.vitals.birthDate:'',p.vitals?.deathDate?'d.'+p.vitals.deathDate:''].filter(Boolean).join(' · ');
+    return`<tr>
+      <td style="padding:5pt 8pt;font-family:'Palatino Linotype',Georgia,serif;font-weight:bold">${esc(p.name||'Unknown')}${isDead(p)?' †':''}</td>
+      <td style="padding:5pt 8pt;color:#8a6a50;font-size:10pt">${esc(sub)}</td>
+      <td style="padding:5pt 8pt;font-size:10pt">${parents(p.id).map(id=>esc(db.people[id]?.name||'?')).join(', ')}</td>
+    </tr>`;
+  }).join('');
+  const html=`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Family Tree Directory</title>
+<style>
+  body{font-family:'Helvetica Neue',Arial,sans-serif;color:#2c1f0e;margin:2cm}
+  h1{font-family:'Palatino Linotype',Georgia,serif;font-size:22pt;border-bottom:2pt solid #5a3e28;padding-bottom:5pt;margin-bottom:4pt}
+  .sub{font-size:10pt;color:#8a6a50;margin-bottom:14pt}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:9pt;text-transform:uppercase;letter-spacing:.06em;color:#8a6a50;padding:5pt 8pt;border-bottom:1.5pt solid #e0d5ba}
+  tr:nth-child(even){background:#f9f6ef}
+  td{vertical-align:top;border-bottom:0.5pt solid #e0d5ba}
+  .footer{margin-top:16pt;font-size:9pt;color:#aaa;border-top:1pt solid #eee;padding-top:5pt}
+  @media print{@page{margin:12mm}body{margin:0}}
+</style>
+</head>
+<body>
+<h1>Family Tree Directory</h1>
+<div class="sub">${ppl.length} people · printed ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
+<table>
+  <thead><tr><th>Name</th><th>Details</th><th>Parents</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">Family Forest</div>
+<script>window.print();<\/script>
+</body>
+</html>`;
+  const w=window.open('','_blank','width=820,height=960');
+  if(w){w.document.write(html);w.document.close();}
+}
 
 // ════════════════════════════════════════════════════════════
 // UTILS
@@ -1020,19 +1268,20 @@ function fmtDates(p){const v=p.vitals||{};const a=[];if(v.birthDate)a.push('b.'+
 // ════════════════════════════════════════════════════════════
 load();
 egoId=findDefault();
+initPanZoom();
 showView('ego');
 document.getElementById('index-view').style.display='none';
 document.getElementById('data-view').style.display='none';
-window.addEventListener('resize',()=>{if(curView==='ego')renderEgo();});
+// Initial viewport centre (after first render)
+requestAnimationFrame(()=>resetVP());
+window.addEventListener('resize',()=>{if(curView==='ego'){renderEgo();resetVP();}});
 
-// Register service worker for offline use + update notifications
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then(reg=>{
     reg.addEventListener('updatefound',()=>{
       const newWorker=reg.installing;
       newWorker.addEventListener('statechange',()=>{
         if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
-          // New version available — show a gentle toast
           const toast=document.createElement('div');
           toast.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parch);padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.3)';
           toast.innerHTML='Update available <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Refresh</button>';
