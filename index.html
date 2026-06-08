@@ -207,6 +207,12 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
 .photo-circle{width:72px;height:72px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--parch3);border:2px solid var(--bord)}
 .photo-circle img{width:100%;height:100%;object-fit:cover;display:block}
 
+/* ── BLOODLINE TOGGLE ── */
+#view-mode-toggle{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:20;display:flex;background:rgba(44,31,14,.82);border-radius:20px;padding:3px;gap:2px;backdrop-filter:blur(6px);box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.vmt-btn{background:none;border:none;color:rgba(245,239,224,.65);font-size:11px;padding:5px 14px;border-radius:16px;cursor:pointer;transition:background .15s,color .15s,transform .12s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;font-family:var(--serif)}
+.vmt-btn:active{transform:scale(.92)}
+.vmt-btn.vmt-on{background:var(--accent);color:#fff}
+
 /* ── HELP PANEL ── */
 #help-panel{
   position:fixed;inset:0;background:var(--parch);z-index:400;
@@ -273,6 +279,10 @@ html,body{height:100%;overflow:hidden;background:var(--parch);font-family:var(--
       <div id="ego-canvas-wrap">
         <div id="ego-canvas">
           <svg id="ego-svg"></svg>
+        </div>
+        <div id="view-mode-toggle">
+          <button class="vmt-btn vmt-on" id="vmt-ego" onclick="setViewMode('ego')">Nuclear</button>
+          <button class="vmt-btn" id="vmt-blood" onclick="setViewMode('bloodline')">Extended</button>
         </div>
         <div class="zoom-ctrl">
           <button class="zoom-btn" title="Zoom in" onclick="zoomBy(1.3)">+</button>
@@ -654,7 +664,16 @@ const EW=180,EH=96;
 const RW=158,RH=80;
 const COL_GAP=18,ROW_GAP=18,V_DIST=112,H_DIST=90;
 
+let viewMode='ego';
+function setViewMode(mode){
+  viewMode=mode;
+  document.getElementById('vmt-ego').classList.toggle('vmt-on',mode==='ego');
+  document.getElementById('vmt-blood').classList.toggle('vmt-on',mode==='bloodline');
+  renderEgo();resetVP();
+}
+
 function renderEgo(){
+  if(viewMode==='bloodline'){renderBloodline();return;}
   const wrap=document.getElementById('ego-canvas-wrap');
   const canvas=document.getElementById('ego-canvas');
   const svg=document.getElementById('ego-svg');
@@ -869,6 +888,149 @@ function makeAdd(container,x,y,cb){
   const el=document.createElement('button');el.className='eadd';el.textContent='+';
   el.style.cssText=`left:${x}px;top:${y}px`;
   el.addEventListener('click',cb);container.appendChild(el);
+}
+
+// ════════════════════════════════════════════════════════════
+// BLOODLINE VIEW
+// ════════════════════════════════════════════════════════════
+function renderBloodline(){
+  const wrap=document.getElementById('ego-canvas-wrap');
+  const c=document.getElementById('ego-canvas');
+  const svg=document.getElementById('ego-svg');
+  c.querySelectorAll('.enode,.elabel,.eadd').forEach(el=>el.remove());
+  wrap.querySelectorAll('.elegend').forEach(el=>el.remove());
+  svg.innerHTML='';
+
+  const ids=Object.keys(db.people);
+  if(!ids.length){
+    if(!c.querySelector('.empty-state')){
+      const d=document.createElement('div');d.className='empty-state';
+      d.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;white-space:nowrap';
+      d.innerHTML=`<h2 style="font-family:var(--serif);font-size:22px;color:var(--ink2);margin-bottom:10px">Your Family Tree</h2>
+        <p style="font-size:14px;color:var(--ink3);max-width:240px;line-height:1.6;white-space:normal">Add your first person to get started.</p>
+        <button style="pointer-events:all;margin-top:18px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:16px;font-family:var(--serif);cursor:pointer" onclick="addPersonFlow(null,null)">+ Add First Person</button>`;
+      c.appendChild(d);
+    }
+    return;
+  }
+  c.querySelector('.empty-state')?.remove();
+  if(!egoId||!db.people[egoId])egoId=findDefault();
+  if(!egoId)return;
+
+  // ── BFS: collect all blood relatives by generation ──
+  // (only follows par links — no partners)
+  const genOf=new Map();genOf.set(egoId,0);
+  const queue=[{id:egoId,gen:0}];
+  const visited=new Set([egoId]);
+  while(queue.length){
+    const{id,gen}=queue.shift();
+    parents(id).forEach(pid=>{
+      if(!visited.has(pid)){visited.add(pid);genOf.set(pid,gen-1);queue.push({id:pid,gen:gen-1});}
+    });
+    children(id).forEach(cid=>{
+      if(!visited.has(cid)){visited.add(cid);genOf.set(cid,gen+1);queue.push({id:cid,gen:gen+1});}
+    });
+  }
+
+  // blood links = par links where both ends are in the bloodline
+  const bloodLinks=db.links.filter(l=>l.type==='par'&&genOf.has(l.from)&&genOf.has(l.to));
+
+  // ── Group by generation ──
+  const byGen=new Map();
+  genOf.forEach((g,id)=>{if(!byGen.has(g))byGen.set(g,[]);byGen.get(g).push(id);});
+  let minG=0,maxG=0;
+  genOf.forEach(g=>{minG=Math.min(minG,g);maxG=Math.max(maxG,g);});
+
+  // ── Sort within each generation for visual coherence ──
+  // Gen 0: ego in centre, siblings adjacent, then others
+  {
+    const gen0=byGen.get(0)||[];
+    const sibSet=new Set(siblings(egoId));
+    const others=gen0.filter(id=>id!==egoId).sort((a,b)=>{
+      const as=sibSet.has(a)?0:1,bs=sibSet.has(b)?0:1;
+      if(as!==bs)return as-bs;
+      return(db.people[a]?.name||'')<(db.people[b]?.name||'')?-1:1;
+    });
+    const mid=Math.floor(others.length/2);
+    byGen.set(0,[...others.slice(0,mid),egoId,...others.slice(mid)]);
+  }
+  // Other gens: sort by average x of children (ancestors) or parents (descendants)
+  // We do this after x assignment, so just sort by name for now; positions handle alignment
+
+  // ── Assign x positions ──
+  const NW=RW+20; // node slot width
+  const GH=130;   // px between generation centres
+  const xOf=new Map();
+
+  // Gen 0: anchor ego at CANVAS_CX, spread others around it
+  {
+    const gen0=byGen.get(0)||[];
+    const ei=gen0.indexOf(egoId);
+    xOf.set(egoId,CANVAS_CX);
+    for(let i=ei-1;i>=0;i--)xOf.set(gen0[i],xOf.get(gen0[i+1])-NW);
+    for(let i=ei+1;i<gen0.length;i++)xOf.set(gen0[i],xOf.get(gen0[i-1])+NW);
+  }
+
+  // Helper: average x of assigned ancestors/descendants
+  function avgParX(id){const p=parents(id).filter(p=>xOf.has(p));return p.length?p.reduce((s,p)=>s+xOf.get(p),0)/p.length:CANVAS_CX;}
+  function avgChX(id,cg){const ch=children(id).filter(c=>genOf.get(c)===cg&&xOf.has(c));return ch.length?ch.reduce((s,c)=>s+xOf.get(c),0)/ch.length:CANVAS_CX;}
+
+  // Ancestors: going up, each gen sorted by children's x, then centred
+  for(let g=-1;g>=minG;g--){
+    const gen=(byGen.get(g)||[]).slice().sort((a,b)=>avgChX(a,g+1)-avgChX(b,g+1));
+    byGen.set(g,gen);
+    const total=gen.length*NW-20;
+    let x=CANVAS_CX-total/2+RW/2;
+    gen.forEach(id=>{xOf.set(id,x);x+=NW;});
+  }
+  // Descendants: going down, sorted by parents' x, then centred
+  for(let g=1;g<=maxG;g++){
+    const gen=(byGen.get(g)||[]).slice().sort((a,b)=>avgParX(a)-avgParX(b));
+    byGen.set(g,gen);
+    const total=gen.length*NW-20;
+    let x=CANVAS_CX-total/2+RW/2;
+    gen.forEach(id=>{xOf.set(id,x);x+=NW;});
+  }
+
+  // ── Draw edges ──
+  const yCtr=g=>CANVAS_CY+g*GH;
+  let svgH='';
+  const seenE=new Set();
+  bloodLinks.forEach(lk=>{
+    const key=lk.from+':'+lk.to;if(seenE.has(key))return;seenE.add(key);
+    if(!xOf.has(lk.from)||!xOf.has(lk.to))return;
+    const x1=xOf.get(lk.from),y1=yCtr(genOf.get(lk.from))+RH/2;
+    const x2=xOf.get(lk.to),y2=yCtr(genOf.get(lk.to))-RH/2;
+    const mid=(y1+y2)/2;
+    const stroke=lk.dubious?'#b8860b':'#5a3e28';
+    const dash=lk.dubious?'stroke-dasharray="5,4"':'';
+    svgH+=`<path d="M${x1},${y1} C${x1},${mid} ${x2},${mid} ${x2},${y2}" stroke="${stroke}" stroke-width="1.5" fill="none" ${dash} opacity=".75"/>`;
+  });
+  svg.innerHTML=svgH;
+
+  // ── Draw nodes ──
+  genOf.forEach((g,id)=>{
+    if(!xOf.has(id))return;
+    const isEgo=id===egoId;
+    const nw=isEgo?EW:RW,nh=isEgo?EH:RH;
+    makeNode(c,id,xOf.get(id)-nw/2,yCtr(g)-nh/2,isEgo?'ego':'rel');
+  });
+
+  // ── Generation labels (left rail) ──
+  const genLabels={0:'Your generation',-1:'Parents',-2:'Grandparents',-3:'Great-grandparents',-4:'2× Great-grandparents',1:'Children',2:'Grandchildren',3:'Great-grandchildren',4:'2× Great-grandchildren'};
+  byGen.forEach((_,g)=>{
+    if(g===0)return;
+    const label=genLabels[g]||(g<0?`+${Math.abs(g)} generations up`:`+${g} generations down`);
+    makeLabel(c,CANVAS_CX,yCtr(g)-RH/2-22,label);
+  });
+
+  // ── Legend ──
+  const leg=document.createElement('div');leg.className='elegend';
+  leg.style.cssText='position:absolute;bottom:12px;right:14px;background:rgba(245,239,224,.94);border:1px solid rgba(44,31,14,.12);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--ink2);pointer-events:none;line-height:1.8;z-index:10';
+  leg.innerHTML=`<div style="font-family:var(--serif);font-weight:bold;margin-bottom:3px">Extended view</div>`+
+    `<div style="font-size:10px;color:var(--ink3);line-height:1.6">Blood relatives only<br>Partners &amp; spouses hidden</div>`+
+    `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(44,31,14,.1);font-size:10px;color:var(--ink3)">Tap a node · drag to pan · pinch to zoom</div>`;
+  wrap.appendChild(leg);
 }
 
 // ════════════════════════════════════════════════════════════
