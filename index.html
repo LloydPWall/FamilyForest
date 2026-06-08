@@ -976,18 +976,23 @@ function renderBloodline(){
   // Two adjacent people in the same generation are in the same branch if
   // they share at least one direct blood relative in the adjacent generation.
   function sameBranch(a,b,g){
-    if(g<0){
-      // Ancestors: same branch = share a common child in blood set
+    if(g===-1){
+      // Parent row: same branch only if they're siblings (share a parent).
+      // Mother and father are NOT siblings → large gap between them.
+      const aP=new Set(parents(a).filter(p=>blood.has(p)));
+      return parents(b).some(p=>aP.has(p));
+    }else if(g<0){
+      // Grandparents+: same branch = share a common child (e.g. both parents of ego's mother)
       const aC=new Set(children(a).filter(ch=>blood.has(ch)));
       return children(b).some(ch=>aC.has(ch));
     }else{
-      // Gen 0 and descendants: same branch = share a common parent in blood set
+      // Gen 0 and descendants: same branch = share a common parent
       const aP=new Set(parents(a).filter(p=>blood.has(p)));
       return parents(b).some(p=>aP.has(p));
     }
   }
 
-  const NODE_GAP=20,BRANCH_GAP=74,GH=130;
+  const NODE_GAP=20,BRANCH_GAP=130,GH=130;
 
   // Compute gap array for a sorted generation
   function gaps(gen,g){
@@ -1018,14 +1023,21 @@ function renderBloodline(){
     return p.length?p.reduce((s,p)=>s+xOf.get(p),0)/p.length:CANVAS_CX;
   }
 
-  // Ancestors (going up): sort by children's x, then centre row with branch gaps
+  // Ancestors (going up): start each person at their children's avg x, resolve overlaps, then centre
   for(let g=-1;g>=minG;g--){
     const gen=(byGen.get(g)||[]).slice().sort((a,b)=>avgChX(a,g+1)-avgChX(b,g+1));
     byGen.set(g,gen);
+    if(!gen.length)continue;
     const gs=gaps(gen,g);
-    const total=rowWidth(gen.length,gs);
-    let x=CANVAS_CX-total/2+RW/2;
-    gen.forEach((id,i)=>{xOf.set(id,x);if(i<gen.length-1)x+=RW+gs[i];});
+    const pos=gen.map(id=>avgChX(id,g+1));
+    // Forward pass: enforce minimum spacing left→right
+    for(let i=1;i<pos.length;i++){const min=RW+gs[i-1];if(pos[i]-pos[i-1]<min)pos[i]=pos[i-1]+min;}
+    // Backward pass: right→left
+    for(let i=pos.length-2;i>=0;i--){const min=RW+gs[i];if(pos[i+1]-pos[i]<min)pos[i]=pos[i+1]-min;}
+    // Centre the row at CANVAS_CX
+    const mid=(pos[0]+pos[pos.length-1])/2;
+    const shift=CANVAS_CX-mid;
+    gen.forEach((id,i)=>xOf.set(id,pos[i]+shift));
   }
   // Descendants (going down): sort by parents' x, then centre with branch gaps
   for(let g=1;g<=maxG;g++){
@@ -1063,10 +1075,15 @@ function renderBloodline(){
 
   // ── Generation labels ──
   const genLabels={'0':'Your generation','-1':'Parents','-2':'Grandparents','-3':'Great-grandparents','-4':'2\xd7 Great-grandparents','1':'Children','2':'Grandchildren','3':'Great-grandchildren','4':'2\xd7 Great-grandchildren'};
-  byGen.forEach((_,g)=>{
-    if(g===0)return;
+  byGen.forEach((gen,g)=>{
+    if(g===0||!gen.length)return;
     const label=genLabels[String(g)]||(g<0?`${Math.abs(g)}\xd7 great-grandparents`:`${g}\xd7 great-grandchildren`);
-    makeLabel(canvas,CANVAS_CX,yCtr(g)-RH/2-22,label);
+    // Anchor label to the left of the row's leftmost node, right-aligned into the margin
+    const leftX=Math.min(...gen.filter(id=>xOf.has(id)).map(id=>xOf.get(id)))-RW/2;
+    const el=document.createElement('div');
+    el.className='elabel';el.textContent=label;
+    el.style.cssText=`left:${leftX-12}px;top:${yCtr(g)-8}px;transform:translateX(-100%);white-space:nowrap`;
+    canvas.appendChild(el);
   });
 
   // ── Legend ──
