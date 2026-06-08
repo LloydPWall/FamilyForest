@@ -5,7 +5,7 @@
 // "Refresh" toast inviting them to load the new version.
 // Their data lives in localStorage and is never touched here.
 // ─────────────────────────────────────────────────────────────
-const CACHE_VERSION = 'ft-v8';
+const CACHE_VERSION = 'ft-v9';
 const CACHED_FILES  = ['.', 'index.html', 'manifest.json'];
 
 // Install: cache the shell
