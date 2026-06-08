@@ -895,45 +895,63 @@ function makeAdd(container,x,y,cb){
 // ════════════════════════════════════════════════════════════
 function renderBloodline(){
   const wrap=document.getElementById('ego-canvas-wrap');
-  const c=document.getElementById('ego-canvas');
+  const canvas=document.getElementById('ego-canvas');
   const svg=document.getElementById('ego-svg');
-  c.querySelectorAll('.enode,.elabel,.eadd').forEach(el=>el.remove());
+  canvas.querySelectorAll('.enode,.elabel,.eadd').forEach(el=>el.remove());
   wrap.querySelectorAll('.elegend').forEach(el=>el.remove());
   svg.innerHTML='';
 
   const ids=Object.keys(db.people);
   if(!ids.length){
-    if(!c.querySelector('.empty-state')){
+    if(!canvas.querySelector('.empty-state')){
       const d=document.createElement('div');d.className='empty-state';
       d.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;white-space:nowrap';
       d.innerHTML=`<h2 style="font-family:var(--serif);font-size:22px;color:var(--ink2);margin-bottom:10px">Your Family Tree</h2>
         <p style="font-size:14px;color:var(--ink3);max-width:240px;line-height:1.6;white-space:normal">Add your first person to get started.</p>
         <button style="pointer-events:all;margin-top:18px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:16px;font-family:var(--serif);cursor:pointer" onclick="addPersonFlow(null,null)">+ Add First Person</button>`;
-      c.appendChild(d);
+      canvas.appendChild(d);
     }
     return;
   }
-  c.querySelector('.empty-state')?.remove();
+  canvas.querySelector('.empty-state')?.remove();
   if(!egoId||!db.people[egoId])egoId=findDefault();
   if(!egoId)return;
 
-  // ── BFS: collect all blood relatives by generation ──
-  // (only follows par links — no partners)
-  const genOf=new Map();genOf.set(egoId,0);
-  const queue=[{id:egoId,gen:0}];
-  const visited=new Set([egoId]);
-  while(queue.length){
-    const{id,gen}=queue.shift();
+  // ── Step 1: Find all true ancestors of ego (upward BFS) ──
+  const ancestors=new Set([egoId]);
+  let q=[egoId];
+  while(q.length){
+    const id=q.shift();
+    parents(id).forEach(pid=>{if(!ancestors.has(pid)){ancestors.add(pid);q.push(pid);}});
+  }
+
+  // ── Step 2: Blood relatives = ancestors ∪ all descendants of ancestors ──
+  // This correctly excludes step-parents: a step-parent is only reachable by going UP
+  // from a blood relative, not DOWN from an ancestor, so they're never added.
+  const blood=new Set(ancestors);
+  q=[...ancestors];
+  const dv=new Set(ancestors);
+  while(q.length){
+    const id=q.shift();
+    children(id).forEach(chId=>{if(!dv.has(chId)){dv.add(chId);blood.add(chId);q.push(chId);}});
+  }
+
+  // ── Step 3: Assign generation numbers (BFS from ego, blood-only) ──
+  const genOf=new Map([[egoId,0]]);
+  q=[{id:egoId,gen:0}];
+  const gv=new Set([egoId]);
+  while(q.length){
+    const{id,gen}=q.shift();
     parents(id).forEach(pid=>{
-      if(!visited.has(pid)){visited.add(pid);genOf.set(pid,gen-1);queue.push({id:pid,gen:gen-1});}
+      if(blood.has(pid)&&!gv.has(pid)){gv.add(pid);genOf.set(pid,gen-1);q.push({id:pid,gen:gen-1});}
     });
-    children(id).forEach(cid=>{
-      if(!visited.has(cid)){visited.add(cid);genOf.set(cid,gen+1);queue.push({id:cid,gen:gen+1});}
+    children(id).forEach(chId=>{
+      if(blood.has(chId)&&!gv.has(chId)){gv.add(chId);genOf.set(chId,gen+1);q.push({id:chId,gen:gen+1});}
     });
   }
 
-  // blood links = par links where both ends are in the bloodline
-  const bloodLinks=db.links.filter(l=>l.type==='par'&&genOf.has(l.from)&&genOf.has(l.to));
+  // par links where both ends are in the blood set
+  const bloodLinks=db.links.filter(l=>l.type==='par'&&blood.has(l.from)&&blood.has(l.to));
 
   // ── Group by generation ──
   const byGen=new Map();
@@ -941,11 +959,10 @@ function renderBloodline(){
   let minG=0,maxG=0;
   genOf.forEach(g=>{minG=Math.min(minG,g);maxG=Math.max(maxG,g);});
 
-  // ── Sort within each generation for visual coherence ──
-  // Gen 0: ego in centre, siblings adjacent, then others
+  // ── Sort gen 0: ego in centre, full siblings adjacent, others beyond ──
   {
     const gen0=byGen.get(0)||[];
-    const sibSet=new Set(siblings(egoId));
+    const sibSet=new Set(siblings(egoId).filter(s=>blood.has(s)));
     const others=gen0.filter(id=>id!==egoId).sort((a,b)=>{
       const as=sibSet.has(a)?0:1,bs=sibSet.has(b)?0:1;
       if(as!==bs)return as-bs;
@@ -954,42 +971,70 @@ function renderBloodline(){
     const mid=Math.floor(others.length/2);
     byGen.set(0,[...others.slice(0,mid),egoId,...others.slice(mid)]);
   }
-  // Other gens: sort by average x of children (ancestors) or parents (descendants)
-  // We do this after x assignment, so just sort by name for now; positions handle alignment
 
-  // ── Assign x positions ──
-  const NW=RW+20; // node slot width
-  const GH=130;   // px between generation centres
+  // ── Branch detection: wider gap between different family branches ──
+  // Two adjacent people in the same generation are in the same branch if
+  // they share at least one direct blood relative in the adjacent generation.
+  function sameBranch(a,b,g){
+    if(g<0){
+      // Ancestors: same branch = share a common child in blood set
+      const aC=new Set(children(a).filter(ch=>blood.has(ch)));
+      return children(b).some(ch=>aC.has(ch));
+    }else{
+      // Gen 0 and descendants: same branch = share a common parent in blood set
+      const aP=new Set(parents(a).filter(p=>blood.has(p)));
+      return parents(b).some(p=>aP.has(p));
+    }
+  }
+
+  const NODE_GAP=20,BRANCH_GAP=74,GH=130;
+
+  // Compute gap array for a sorted generation
+  function gaps(gen,g){
+    return gen.slice(0,-1).map((_,i)=>sameBranch(gen[i],gen[i+1],g)?NODE_GAP:BRANCH_GAP);
+  }
+  // Total pixel width of a generation
+  function rowWidth(n,gs){return n*RW+(gs.length?gs.reduce((s,v)=>s+v,0):0);}
+
   const xOf=new Map();
 
-  // Gen 0: anchor ego at CANVAS_CX, spread others around it
+  // Gen 0: anchor ego at CANVAS_CX, spread left and right with branch-aware gaps
   {
     const gen0=byGen.get(0)||[];
     const ei=gen0.indexOf(egoId);
+    const gs=gaps(gen0,0);
     xOf.set(egoId,CANVAS_CX);
-    for(let i=ei-1;i>=0;i--)xOf.set(gen0[i],xOf.get(gen0[i+1])-NW);
-    for(let i=ei+1;i<gen0.length;i++)xOf.set(gen0[i],xOf.get(gen0[i-1])+NW);
+    for(let i=ei-1;i>=0;i--)xOf.set(gen0[i],xOf.get(gen0[i+1])-RW-gs[i]);
+    for(let i=ei+1;i<gen0.length;i++)xOf.set(gen0[i],xOf.get(gen0[i-1])+RW+gs[i-1]);
   }
 
-  // Helper: average x of assigned ancestors/descendants
-  function avgParX(id){const p=parents(id).filter(p=>xOf.has(p));return p.length?p.reduce((s,p)=>s+xOf.get(p),0)/p.length:CANVAS_CX;}
-  function avgChX(id,cg){const ch=children(id).filter(c=>genOf.get(c)===cg&&xOf.has(c));return ch.length?ch.reduce((s,c)=>s+xOf.get(c),0)/ch.length:CANVAS_CX;}
+  // Avg x of already-assigned nodes in an adjacent generation
+  function avgChX(id,cg){
+    const ch=children(id).filter(c=>genOf.get(c)===cg&&xOf.has(c));
+    return ch.length?ch.reduce((s,c)=>s+xOf.get(c),0)/ch.length:CANVAS_CX;
+  }
+  function avgParX(id){
+    const p=parents(id).filter(p=>xOf.has(p));
+    return p.length?p.reduce((s,p)=>s+xOf.get(p),0)/p.length:CANVAS_CX;
+  }
 
-  // Ancestors: going up, each gen sorted by children's x, then centred
+  // Ancestors (going up): sort by children's x, then centre row with branch gaps
   for(let g=-1;g>=minG;g--){
     const gen=(byGen.get(g)||[]).slice().sort((a,b)=>avgChX(a,g+1)-avgChX(b,g+1));
     byGen.set(g,gen);
-    const total=gen.length*NW-20;
+    const gs=gaps(gen,g);
+    const total=rowWidth(gen.length,gs);
     let x=CANVAS_CX-total/2+RW/2;
-    gen.forEach(id=>{xOf.set(id,x);x+=NW;});
+    gen.forEach((id,i)=>{xOf.set(id,x);if(i<gen.length-1)x+=RW+gs[i];});
   }
-  // Descendants: going down, sorted by parents' x, then centred
+  // Descendants (going down): sort by parents' x, then centre with branch gaps
   for(let g=1;g<=maxG;g++){
     const gen=(byGen.get(g)||[]).slice().sort((a,b)=>avgParX(a)-avgParX(b));
     byGen.set(g,gen);
-    const total=gen.length*NW-20;
+    const gs=gaps(gen,g);
+    const total=rowWidth(gen.length,gs);
     let x=CANVAS_CX-total/2+RW/2;
-    gen.forEach(id=>{xOf.set(id,x);x+=NW;});
+    gen.forEach((id,i)=>{xOf.set(id,x);if(i<gen.length-1)x+=RW+gs[i];});
   }
 
   // ── Draw edges ──
@@ -999,9 +1044,9 @@ function renderBloodline(){
   bloodLinks.forEach(lk=>{
     const key=lk.from+':'+lk.to;if(seenE.has(key))return;seenE.add(key);
     if(!xOf.has(lk.from)||!xOf.has(lk.to))return;
-    const x1=xOf.get(lk.from),y1=yCtr(genOf.get(lk.from))+RH/2;
-    const x2=xOf.get(lk.to),y2=yCtr(genOf.get(lk.to))-RH/2;
-    const mid=(y1+y2)/2;
+    const x1=xOf.get(lk.from),g1=genOf.get(lk.from);
+    const x2=xOf.get(lk.to),g2=genOf.get(lk.to);
+    const y1=yCtr(g1)+RH/2,y2=yCtr(g2)-RH/2,mid=(y1+y2)/2;
     const stroke=lk.dubious?'#b8860b':'#5a3e28';
     const dash=lk.dubious?'stroke-dasharray="5,4"':'';
     svgH+=`<path d="M${x1},${y1} C${x1},${mid} ${x2},${mid} ${x2},${y2}" stroke="${stroke}" stroke-width="1.5" fill="none" ${dash} opacity=".75"/>`;
@@ -1013,22 +1058,22 @@ function renderBloodline(){
     if(!xOf.has(id))return;
     const isEgo=id===egoId;
     const nw=isEgo?EW:RW,nh=isEgo?EH:RH;
-    makeNode(c,id,xOf.get(id)-nw/2,yCtr(g)-nh/2,isEgo?'ego':'rel');
+    makeNode(canvas,id,xOf.get(id)-nw/2,yCtr(g)-nh/2,isEgo?'ego':'rel');
   });
 
-  // ── Generation labels (left rail) ──
-  const genLabels={'0':'Your generation','-1':'Parents / Aunts & Uncles','-2':'Grandparents','-3':'Great-grandparents','-4':'2× Great-grandparents','1':'Children / Nieces & Nephews','2':'Grandchildren','3':'Great-grandchildren','4':'2× Great-grandchildren'};
+  // ── Generation labels ──
+  const genLabels={'0':'Your generation','-1':'Parents','-2':'Grandparents','-3':'Great-grandparents','-4':'2\xd7 Great-grandparents','1':'Children','2':'Grandchildren','3':'Great-grandchildren','4':'2\xd7 Great-grandchildren'};
   byGen.forEach((_,g)=>{
     if(g===0)return;
-    const label=genLabels[String(g)]||(g<0?`${Math.abs(g)}× great-grandparents`:`${g}× great-grandchildren`);
-    makeLabel(c,CANVAS_CX,yCtr(g)-RH/2-22,label);
+    const label=genLabels[String(g)]||(g<0?`${Math.abs(g)}\xd7 great-grandparents`:`${g}\xd7 great-grandchildren`);
+    makeLabel(canvas,CANVAS_CX,yCtr(g)-RH/2-22,label);
   });
 
   // ── Legend ──
   const leg=document.createElement('div');leg.className='elegend';
   leg.style.cssText='position:absolute;bottom:12px;right:14px;background:rgba(245,239,224,.94);border:1px solid rgba(44,31,14,.12);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--ink2);pointer-events:none;line-height:1.8;z-index:10';
   leg.innerHTML=`<div style="font-family:var(--serif);font-weight:bold;margin-bottom:3px">Extended view</div>`+
-    `<div style="font-size:10px;color:var(--ink3);line-height:1.6">Blood relatives only<br>Partners &amp; spouses hidden</div>`+
+    `<div style="font-size:10px;color:var(--ink3);line-height:1.6">Blood relatives only · partners hidden</div>`+
     `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(44,31,14,.1);font-size:10px;color:var(--ink3)">Tap a node · drag to pan · pinch to zoom</div>`;
   wrap.appendChild(leg);
 }
@@ -1778,19 +1823,29 @@ document.getElementById('data-view').style.display='none';
 requestAnimationFrame(()=>{resetVP();if(!localStorage.getItem('ft_welcomed'))showHelp(true);});
 window.addEventListener('resize',()=>{if(curView==='ego'){renderEgo();resetVP();}});
 
+</script>
+<!-- SW registration in its own script so app JS errors never block update detection -->
+<script>
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then(reg=>{
     reg.addEventListener('updatefound',()=>{
-      const newWorker=reg.installing;
-      newWorker.addEventListener('statechange',()=>{
-        if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
-          const toast=document.createElement('div');
-          toast.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parch);padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-          toast.innerHTML='Update available <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Refresh</button>';
-          document.body.appendChild(toast);
+      const nw=reg.installing;
+      nw.addEventListener('statechange',()=>{
+        if(nw.state==='installed'&&navigator.serviceWorker.controller){
+          const t=document.createElement('div');
+          t.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#2c1f0e;color:#f5efe0;padding:10px 18px;border-radius:20px;font-size:13px;z-index:9999;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+          t.innerHTML='Update available <button onclick="location.reload()" style="background:#8b3a2a;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Refresh</button>';
+          document.body.appendChild(t);
         }
       });
     });
+    // Also catch already-waiting SW (e.g. page was open during install)
+    if(reg.waiting&&navigator.serviceWorker.controller){
+      const t=document.createElement('div');
+      t.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#2c1f0e;color:#f5efe0;padding:10px 18px;border-radius:20px;font-size:13px;z-index:9999;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+      t.innerHTML='Update available <button onclick="location.reload()" style="background:#8b3a2a;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Refresh</button>';
+      document.body.appendChild(t);
+    }
   });
 }
 </script>
