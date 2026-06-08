@@ -1017,10 +1017,10 @@ function renderBloodline(){
   });
 
   // ── Generation labels (left rail) ──
-  const genLabels={0:'Your generation',-1:'Parents',-2:'Grandparents',-3:'Great-grandparents',-4:'2× Great-grandparents',1:'Children',2:'Grandchildren',3:'Great-grandchildren',4:'2× Great-grandchildren'};
+  const genLabels={'0':'Your generation','-1':'Parents / Aunts & Uncles','-2':'Grandparents','-3':'Great-grandparents','-4':'2× Great-grandparents','1':'Children / Nieces & Nephews','2':'Grandchildren','3':'Great-grandchildren','4':'2× Great-grandchildren'};
   byGen.forEach((_,g)=>{
     if(g===0)return;
-    const label=genLabels[g]||(g<0?`+${Math.abs(g)} generations up`:`+${g} generations down`);
+    const label=genLabels[String(g)]||(g<0?`${Math.abs(g)}× great-grandparents`:`${g}× great-grandchildren`);
     makeLabel(c,CANVAS_CX,yCtr(g)-RH/2-22,label);
   });
 
